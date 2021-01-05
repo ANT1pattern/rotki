@@ -488,7 +488,7 @@ class Rotkehlchen():
 
         May raise:
         - RemoteError if an external service such as Etherscan is queried and
-          there is a problem with its query.
+          there is a problem with its query
         - InputError if a non-existing account was given to remove
         """
         balances_update = self.chain_manager.remove_blockchain_accounts(
