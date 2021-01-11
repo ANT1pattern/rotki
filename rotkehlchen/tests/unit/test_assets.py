@@ -66,6 +66,49 @@ def test_ethereum_tokens():
         EthereumToken('BTC')
 
 
+def test_cryptocompare_asset_support(cryptocompare):
+    """Try to detect if a token that we have as not supported by cryptocompare got added"""
+    cc_assets = cryptocompare.all_coins()
+    exceptions = (
+        'BKC',     # Bankcoin Cash but Balkan Coin in CC
+        'BNC',     # Bionic but Benja Coin in CC
+        'BTG-2',   # Bitgem but Bitcoin Gold in CC
+        'BTR',     # Bitether but Bither in CC
+        'CBC-2',   # Cashbery coin but Casino Betting Coin in CC
+        'CCN',     # CustomContractnetwork but CannaCoin in CC
+        'CMCT-2',  # Cyber Movie Chain but Crowd Machine in CC
+        'CORN-2',  # Cornichon but Corn in CC
+        'CTX',     # Centauri coin but CarTaxi in CC
+        'DIT',     # Direct insurance token but DitCoin in CC
+        'DRM',     # Dreamcoin but Dreamchain in CC
+        'DTX-2',   # Digital Ticks but Data Exchange in CC
+        'GNC',     # Galaxy network but Greencoin in CC
+        'KNT',     # Kora network but Knekted in CC
+        'LKY',     # Linkey but LuckyCoin in CC
+        'NTK-2',   # Netkoin but Neurotoken in CC
+        'PAN',     # Panvala but Pantos in CC
+        'PTT',     # Proton token but Pink Taxi Token in CC
+        'RMC',     # Remicoin but Russian Miner Coin in CC
+        'SOUL-2',  # Cryptosoul but Phantasma in CC
+        'TIC',     # Thingschain but True Investment Coin in CC
+        'TOK',     # TOKOK but Tokugawa Coin in CC
+        'VD',      # Bitcoin card but Vindax Coin in CC
+        'DT',      # Dragon Token but Dark Token in CC
+    )
+    for identifier, asset_data in AssetResolver().assets.items():
+        potential_support = (
+            asset_data.get('cryptocompare', None) == '' and
+            asset_data['symbol'] in cc_assets and
+            identifier not in exceptions
+        )
+        if potential_support:
+            msg = (
+                f'We have {identifier} as not supported by cryptocompare but '
+                f'the symbol appears in its supported assets'
+            )
+            test_warnings.warn(UserWarning(msg))
+
+
 def test_tokens_address_is_checksummed():
     """Test that all ethereum saved token asset addresses are checksummed"""
     for _, asset_data in AssetResolver().assets.items():
@@ -88,7 +131,7 @@ def test_asset_identifiers_are_unique_all_lowercased():
         identifier_set.add(asset_id)
 
 
-def test_coingecko_identifiers_are_reachable():
+def test_coingecko_identifiers_are_reachable(data_dir):
     """
     Test that all assets have a coingecko entry and that all the identifiers exist in coingecko
     """
@@ -169,9 +212,14 @@ def test_coingecko_identifiers_are_reachable():
         '1ST',
         'aLEND',
         'aREP',
+        'CRBT',
+        'EXC-2',
+        'DT',
+        'CZR',
     ]
-    coingecko = Coingecko()
+    coingecko = Coingecko(data_directory=data_dir)
     all_coins = coingecko.all_coins()
+
     for identifier, asset_data in AssetResolver().assets.items():
         if identifier in coins_delisted_from_coingecko:
             # data = coingecko.asset_data(Asset(identifier))
@@ -217,7 +265,7 @@ def test_coingecko_identifiers_are_reachable():
 def test_assets_json_meta():
     """Test that all_assets.json md5 matches and that if md5 changes since last
     time then version is also bumped"""
-    last_meta = {'md5': '68aafee0c78c848e5a58171065c20cd1', 'version': 37}
+    last_meta = {'md5': '01a9135bedd9eeffb76c6583f98f321a', 'version': 40}
     data_dir = Path(__file__).resolve().parent.parent.parent / 'data'
     data_md5 = file_md5(data_dir / 'all_assets.json')
 

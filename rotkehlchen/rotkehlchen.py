@@ -15,12 +15,12 @@ from typing_extensions import Literal
 from rotkehlchen.accounting.accountant import Accountant
 from rotkehlchen.assets.resolver import AssetResolver
 from rotkehlchen.balances.manual import account_for_manually_tracked_balances
-from rotkehlchen.chain.bitcoin.xpub import XpubManager
 from rotkehlchen.chain.ethereum.manager import (
     ETHEREUM_NODES_TO_CONNECT_AT_START,
     EthereumManager,
     NodeName,
 )
+from rotkehlchen.tasks.manager import TaskManager, DEFAULT_MAX_TASKS_NUM
 from rotkehlchen.chain.ethereum.trades import AMMTrade
 from rotkehlchen.chain.manager import BlockchainBalancesUpdate, ChainManager
 from rotkehlchen.config import default_data_directory
@@ -75,7 +75,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 log = RotkehlchenLogsAdapter(logger)
 
-MAIN_LOOP_SECS_DELAY = 15
+MAIN_LOOP_SECS_DELAY = 10
 FREE_TRADES_LIMIT = 250
 FREE_ASSET_MOVEMENTS_LIMIT = 100
 LIMITS_MAPPING = {
@@ -117,6 +117,7 @@ class Rotkehlchen():
             raise SystemPermissionError(
                 f'The given data directory {self.data_dir} is not readable or writable',
             )
+        self.main_loop_spawned = False
         self.args = args
         self.msg_aggregator = MessagesAggregator()
         self.greenlet_manager = GreenletManager(msg_aggregator=self.msg_aggregator)
@@ -125,11 +126,12 @@ class Rotkehlchen():
         AssetResolver(data_directory=self.data_dir)
         self.data = DataHandler(self.data_dir, self.msg_aggregator)
         self.cryptocompare = Cryptocompare(data_directory=self.data_dir, database=None)
-        self.coingecko = Coingecko()
+        self.coingecko = Coingecko(data_directory=self.data_dir)
         self.icon_manager = IconManager(data_dir=self.data_dir, coingecko=self.coingecko)
         self.greenlet_manager.spawn_and_track(
             after_seconds=None,
             task_name='periodically_query_icons_until_all_cached',
+            exception_is_error=False,
             method=self.icon_manager.periodically_query_icons_until_all_cached,
             batch_size=ICONS_BATCH_SIZE,
             sleep_time_secs=ICONS_QUERY_SLEEP,
@@ -147,6 +149,7 @@ class Rotkehlchen():
         }
 
         self.lock.release()
+        self.task_manager: Optional[TaskManager] = None
         self.shutdown_event = gevent.event.Event()
 
     def reset_after_failed_account_creation_or_login(self) -> None:
@@ -207,10 +210,9 @@ class Rotkehlchen():
             # the premium credentials were given by the user
             if create_new:
                 raise
-            self.msg_aggregator.add_error(
-                'Tried to synchronize the database from remote but the local password '
-                'does not match the one the remote DB has. Please change the password '
-                'to be the same as the password of the account you want to sync from ',
+            self.msg_aggregator.add_warning(
+                'Could not authenticate the Rotki premium API keys found in the DB.'
+                ' Has your subscription expired?',
             )
             # else let's just continue. User signed in succesfully, but he just
             # has unauthenticable/invalid premium credentials remaining in his DB
@@ -219,18 +221,18 @@ class Rotkehlchen():
         self.greenlet_manager.spawn_and_track(
             after_seconds=None,
             task_name='submit_usage_analytics',
+            exception_is_error=False,
             method=maybe_submit_usage_analytics,
             should_submit=settings.submit_usage_analytics,
         )
         self.etherscan = Etherscan(database=self.data.db, msg_aggregator=self.msg_aggregator)
         self.beaconchain = BeaconChain(database=self.data.db, msg_aggregator=self.msg_aggregator)
-        historical_data_start = settings.historical_data_start
         eth_rpc_endpoint = settings.eth_rpc_endpoint
         # Initialize the price historian singleton
         PriceHistorian(
             data_directory=self.data_dir,
-            history_date_start=historical_data_start,
             cryptocompare=self.cryptocompare,
+            coingecko=self.coingecko,
         )
         self.accountant = Accountant(
             db=self.data.db,
@@ -276,6 +278,14 @@ class Rotkehlchen():
             exchange_manager=self.exchange_manager,
             chain_manager=self.chain_manager,
         )
+        self.task_manager = TaskManager(
+            max_tasks_num=DEFAULT_MAX_TASKS_NUM,
+            greenlet_manager=self.greenlet_manager,
+            database=self.data.db,
+            cryptocompare=self.cryptocompare,
+            premium_sync_manager=self.premium_sync_manager,
+            chain_manager=self.chain_manager,
+        )
         self.user_is_logged_in = True
         log.debug('User unlocking complete')
 
@@ -308,6 +318,7 @@ class Rotkehlchen():
         # Make sure no messages leak to other user sessions
         self.msg_aggregator.consume_errors()
         self.msg_aggregator.consume_warnings()
+        self.task_manager = None
 
         self.user_is_logged_in = False
         log.info(
@@ -346,30 +357,16 @@ class Rotkehlchen():
         self.chain_manager.deactivate_premium_status()
 
     def start(self) -> gevent.Greenlet:
-        return gevent.spawn(self.main_loop)
+        assert not self.main_loop_spawned, 'Tried to spawn the main loop twice'
+        greenlet = gevent.spawn(self.main_loop)
+        self.main_loop_spawned = True
+        return greenlet
 
     def main_loop(self) -> None:
-        """Rotki main loop that fires often and manages many different tasks
-
-        Each task remembers the last time it run successfully and know how often it
-        should run. So each task manages itself.
-        """
-        # super hacky -- organize better when recurring tasks are implemented
-        # https://github.com/rotki/rotki/issues/1106
-        xpub_derivation_scheduled = False
-        while self.shutdown_event.wait(MAIN_LOOP_SECS_DELAY) is not True:
-            if self.user_is_logged_in:
-                log.debug('Main loop start')
-                self.premium_sync_manager.maybe_upload_data_to_server()
-                if not xpub_derivation_scheduled:
-                    # 1 minute in the app's startup try to derive new xpub addresses
-                    self.greenlet_manager.spawn_and_track(
-                        after_seconds=60.0,
-                        task_name='Derive new xpub addresses',
-                        method=XpubManager(self.chain_manager).check_for_new_xpub_addresses,
-                    )
-                    xpub_derivation_scheduled = True
-                log.debug('Main loop end')
+        """Rotki main loop that fires often and runs the task manager's scheduler"""
+        while self.shutdown_event.wait(timeout=MAIN_LOOP_SECS_DELAY) is not True:
+            if self.task_manager is not None:
+                self.task_manager.schedule()
 
     def get_blockchain_account_data(
             self,

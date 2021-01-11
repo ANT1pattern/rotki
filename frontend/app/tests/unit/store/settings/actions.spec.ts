@@ -1,3 +1,5 @@
+import { Defaults } from '@/data/defaults';
+import { axiosSnakeCaseTransformer } from '@/services/axios-tranformers';
 import { api } from '@/services/rotkehlchen-api';
 import {
   TIMEFRAME_SETTING,
@@ -5,7 +7,12 @@ import {
   TIMEFRAME_ALL,
   TIMEFRAME_REMEMBER,
   LAST_KNOWN_TIMEFRAME,
-  QUERY_PERIOD
+  QUERY_PERIOD,
+  TAX_REPORT_PERIOD,
+  ALL,
+  THOUSAND_SEPARATOR,
+  DECIMAL_SEPARATOR,
+  CURRENCY_LOCATION
 } from '@/store/settings/consts';
 import { FrontendSettingsPayload } from '@/store/settings/types';
 import store from '@/store/store';
@@ -24,12 +31,21 @@ describe('settings:actions', () => {
 
     expect(api.setSettings).toHaveBeenCalledWith(
       expect.objectContaining({
-        frontend_settings: JSON.stringify({
-          [DEFI_SETUP_DONE]: true,
-          [TIMEFRAME_SETTING]: TIMEFRAME_REMEMBER,
-          [LAST_KNOWN_TIMEFRAME]: TIMEFRAME_ALL,
-          [QUERY_PERIOD]: 5
-        })
+        frontend_settings: JSON.stringify(
+          axiosSnakeCaseTransformer({
+            [DEFI_SETUP_DONE]: true,
+            [TIMEFRAME_SETTING]: TIMEFRAME_REMEMBER,
+            [LAST_KNOWN_TIMEFRAME]: TIMEFRAME_ALL,
+            [QUERY_PERIOD]: 5,
+            [TAX_REPORT_PERIOD]: {
+              year: new Date().getFullYear().toString(),
+              quarter: ALL
+            },
+            [THOUSAND_SEPARATOR]: Defaults.DEFAULT_THOUSAND_SEPARATOR,
+            [DECIMAL_SEPARATOR]: Defaults.DEFAULT_DECIMAL_SEPARATOR,
+            [CURRENCY_LOCATION]: Defaults.DEFAULT_CURRENCY_LOCATION
+          })
+        )
       })
     );
   });

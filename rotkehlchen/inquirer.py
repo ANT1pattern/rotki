@@ -3,7 +3,7 @@ from __future__ import unicode_literals  # isort:skip
 import logging
 from json.decoder import JSONDecodeError
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, Iterable, Optional
+from typing import TYPE_CHECKING, Dict, Iterable, NamedTuple, Optional
 
 import requests
 
@@ -27,7 +27,13 @@ from rotkehlchen.errors import PriceQueryUnsupportedAsset, RemoteError, UnableTo
 from rotkehlchen.fval import FVal
 from rotkehlchen.logging import RotkehlchenLogsAdapter
 from rotkehlchen.typing import Price, Timestamp
-from rotkehlchen.utils.misc import request_get_dict, retry_calls, timestamp_to_date, ts_now
+from rotkehlchen.utils.misc import (
+    get_or_make_price_history_dir,
+    request_get_dict,
+    retry_calls,
+    timestamp_to_date,
+    ts_now,
+)
 from rotkehlchen.utils.serialization import rlk_jsondumps, rlk_jsonloads_dict
 
 if TYPE_CHECKING:
@@ -38,6 +44,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 log = RotkehlchenLogsAdapter(logger)
+
+CURRENT_PRICE_CACHE_SECS = 300  # 5 mins
 
 SPECIAL_SYMBOLS = (
     'yyDAI+yUSDC+yUSDT+yBUSD',
@@ -138,9 +146,15 @@ def _query_exchanges_rateapi(base: Asset, quote: Asset) -> Optional[Price]:
         return None
 
 
+class CachedPriceEntry(NamedTuple):
+    price: Price
+    time: Timestamp
+
+
 class Inquirer():
     __instance: Optional['Inquirer'] = None
     _cached_forex_data: Dict
+    _cached_current_price: Dict  # Can't use CacheableObject due to Singleton
     _data_directory: Path
     _cryptocompare: 'Cryptocompare'
     _coingecko: 'Coingecko'
@@ -164,7 +178,10 @@ class Inquirer():
         Inquirer.__instance._data_directory = data_dir
         Inquirer._cryptocompare = cryptocompare
         Inquirer._coingecko = coingecko
-        filename = data_dir / 'price_history_forex.json'
+        Inquirer._cached_current_price = {}
+        # Make price history directory if it does not exist
+        price_history_dir = get_or_make_price_history_dir(data_dir)
+        filename = price_history_dir / 'price_history_forex.json'
         try:
             with open(filename, 'r') as f:
                 # we know price_history_forex contains a dict
@@ -208,11 +225,20 @@ class Inquirer():
         return price
 
     @staticmethod
-    def find_usd_price(asset: Asset) -> Price:
+    def find_usd_price(asset: Asset, ignore_cache: bool = False) -> Price:
         """Returns the current USD price of the asset
 
         Returns Price(ZERO) if all options have been exhausted and errors are logged in the logs
         """
+        if ignore_cache is False:
+            cache = Inquirer()._cached_current_price.get(asset, None)
+            cache_is_valid = (
+                cache is not None and
+                ts_now() - cache.time <= CURRENT_PRICE_CACHE_SECS
+            )
+            if cache_is_valid:
+                return cache.price
+
         if asset.identifier in SPECIAL_SYMBOLS:
             ethereum = Inquirer()._ethereum
             assert ethereum, 'Inquirer should never be called before the injection of ethereum'
@@ -223,14 +249,19 @@ class Inquirer():
                 underlying_asset_price=underlying_asset_price,
             )
             if usd_price is None:
-                return Price(ZERO)
+                price = Price(ZERO)
+            else:
+                price = Price(usd_price)
 
-            return Price(usd_price)
+            Inquirer._cached_current_price[asset] = CachedPriceEntry(price=price, time=ts_now())
+            return price
 
-        try:
-            price = Inquirer()._cryptocompare_find_usd_price(asset)
-        except RemoteError:
-            price = Price(ZERO)
+        price = Price(ZERO)
+        if Inquirer()._cryptocompare.rate_limited_in_last() is False:
+            try:
+                price = Inquirer()._cryptocompare_find_usd_price(asset)
+            except RemoteError:
+                pass
 
         if price == Price(ZERO):
             try:
@@ -240,6 +271,8 @@ class Inquirer():
                     f'Coingecko usd price query for {asset.identifier} failed due to {str(e)}',
                 )
                 price = Price(ZERO)
+
+        Inquirer._cached_current_price[asset] = CachedPriceEntry(price=price, time=ts_now())
         return price
 
     @staticmethod
@@ -357,7 +390,9 @@ class Inquirer():
     @staticmethod
     def save_historical_forex_data() -> None:
         instance = Inquirer()
-        filename = instance._data_directory / 'price_history_forex.json'
+        # Make price history directory if it does not exist
+        price_history_dir = get_or_make_price_history_dir(instance._data_directory)
+        filename = price_history_dir / 'price_history_forex.json'
         with open(filename, 'w') as outfile:
             outfile.write(rlk_jsondumps(instance._cached_forex_data))
 

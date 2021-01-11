@@ -2,7 +2,22 @@
 Changelog
 =========
 
+* :bug:`2040` Balance snapshotting should now work again for Bitfinex and Bitstamp users.
+* :feature:`2056` Users can now control whether a profit loss report in a certain time range is allowed to go further in the past to calculate the real cost basis of assets or not. By default this setting is on.
+* :feature:`2008` Users can now search for a currency in the currency selection UI.
+* :bug:`2006` Users will now properly see all accounts selected as a hint when no account is selected in airdrops.
+* :bug:`2023` Crypto.com is now properly not displayed as a connectable exchange.
+* :feature:`1950` Users can now use a predefined yearly or quarterly range when generating a tax report.
 * :bug:`2013` Show correct fee currency for Bitfinex trades.
+* :feature:`991` Add Bitcoin.de exchange.
+* :feature:`629` Add ICONOMI exchange. Balances and trades of single assets can be imported.
+
+* :feature:`-` Added support for the following tokens:
+
+  - `Energi (NRG) <https://www.coingecko.com/en/coins/energi>`__
+  - `Exeedme (XED) <https://www.coingecko.com/en/coins/exeedme>`__
+  - `Terra Virtua Kolect (TVK) <https://www.coingecko.com/en/coins/terra-virtua-kolect>`__
+  - `Celsius network token (CEL) <https://www.coingecko.com/en/coins/celsius-network-token>`__
 
 * :release:`1.11.0 <2020-12-30>`
 * :bug:`1929` Premium users will be able to see the proper balances after a force pull.

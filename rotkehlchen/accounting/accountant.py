@@ -318,8 +318,9 @@ class Accountant():
                 (
                     should_continue,
                     prev_time,
-                ) = self.process_action(
+                ) = self._process_action(
                     action=action,
+                    start_ts=start_ts,
                     end_ts=end_ts,
                     prev_time=prev_time,
                     db_settings=db_settings,
@@ -329,7 +330,7 @@ class Accountant():
                 ts = action_get_timestamp(action)
                 self.msg_aggregator.add_error(
                     f'Skipping action at '
-                    f' {timestamp_to_date(ts, formatstr="%d/%m/%Y, %H:%M:%S")} '
+                    f'{timestamp_to_date(ts, formatstr="%d/%m/%Y, %H:%M:%S")} '
                     f'during history processing due to an asset unknown to '
                     f'cryptocompare being involved. Check logs for details',
                 )
@@ -342,7 +343,7 @@ class Accountant():
                 ts = action_get_timestamp(action)
                 self.msg_aggregator.add_error(
                     f'Skipping action at '
-                    f' {timestamp_to_date(ts, formatstr="%d/%m/%Y, %H:%M:%S")} '
+                    f'{timestamp_to_date(ts, formatstr="%d/%m/%Y, %H:%M:%S")} '
                     f'during history processing due to inability to find a price '
                     f'at that point in time: {str(e)}. Check the logs for more details',
                 )
@@ -355,7 +356,7 @@ class Accountant():
                 ts = action_get_timestamp(action)
                 self.msg_aggregator.add_error(
                     f'Skipping action at '
-                    f' {timestamp_to_date(ts, formatstr="%d/%m/%Y, %H:%M:%S")} '
+                    f'{timestamp_to_date(ts, formatstr="%d/%m/%Y, %H:%M:%S")} '
                     f'during history processing due to inability to reach an external '
                     f'service at that point in time: {str(e)}. Check the logs for more details',
                 )
@@ -406,9 +407,10 @@ class Accountant():
             'all_events': self.csvexporter.all_events,
         }
 
-    def process_action(
+    def _process_action(
             self,
             action: TaxableAction,
+            start_ts: Timestamp,
             end_ts: Timestamp,
             prev_time: Timestamp,
             db_settings: DBSettings,
@@ -433,7 +435,12 @@ class Accountant():
         )
         prev_time = timestamp
 
+        if not db_settings.calculate_past_cost_basis and timestamp < start_ts:
+            # ignore older actions than start_ts if we don't want past cost basis
+            return True, prev_time
+
         if timestamp > end_ts:
+            # reached the end of the time period for the report
             return False, prev_time
 
         self.currently_processing_timestamp = timestamp
