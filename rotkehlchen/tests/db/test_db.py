@@ -20,14 +20,13 @@ from rotkehlchen.db.settings import (
     DEFAULT_ANONYMIZED_LOGS,
     DEFAULT_BALANCE_SAVE_FREQUENCY,
     DEFAULT_BTC_DERIVATION_GAP_LIMIT,
+    DEFAULT_CALCULATE_PAST_COST_BASIS,
     DEFAULT_DATE_DISPLAY_FORMAT,
     DEFAULT_INCLUDE_CRYPTO2CRYPTO,
     DEFAULT_INCLUDE_GAS_COSTS,
     DEFAULT_KRAKEN_ACCOUNT_TYPE,
     DEFAULT_MAIN_CURRENCY,
-    DEFAULT_START_DATE,
     DEFAULT_UI_FLOATING_PRECISION,
-    DEFAULT_CALCULATE_PAST_COST_BASIS,
     ROTKEHLCHEN_DB_VERSION,
     DBSettings,
     ModifiableDBSettings,
@@ -96,6 +95,10 @@ TABLES_AT_INIT = [
     'uniswap_events',
     'eth2_deposits',
     'adex_events',
+    'ledger_actions',
+    'ledger_action_type',
+    'ignored_actions',
+    'action_type',
 ]
 
 
@@ -259,8 +262,8 @@ def test_writing_fetching_data(data_dir, username):
     assert 0 <= last_write_diff < 3
     expected_dict = {
         'have_premium': False,
-        'historical_data_start': DEFAULT_START_DATE,
         'eth_rpc_endpoint': 'http://localhost:8545',
+        'ksm_rpc_endpoint': 'http://localhost:9933',
         'ui_floating_precision': DEFAULT_UI_FLOATING_PRECISION,
         'version': ROTKEHLCHEN_DB_VERSION,
         'include_crypto2crypto': DEFAULT_INCLUDE_CRYPTO2CRYPTO,
@@ -301,7 +304,6 @@ def test_settings_entry_types(database):
         ui_floating_precision=1,
         taxfree_after_period=1,
         include_gas_costs=True,
-        historical_data_start='01/08/2015',
         eth_rpc_endpoint='http://localhost:8545',
         balance_save_frequency=24,
         date_display_format='%d/%m/%Y %H:%M:%S %z',
@@ -321,8 +323,6 @@ def test_settings_entry_types(database):
     assert res.ui_floating_precision == 1
     assert isinstance(res.taxfree_after_period, int)
     assert res.taxfree_after_period == 1
-    assert isinstance(res.historical_data_start, str)
-    assert res.historical_data_start == '01/08/2015'
     assert isinstance(res.eth_rpc_endpoint, str)
     assert res.eth_rpc_endpoint == 'http://localhost:8545'
     assert isinstance(res.balance_save_frequency, int)
@@ -946,8 +946,8 @@ def test_non_checksummed_eth_account_in_db(database):
     warnings = database.msg_aggregator.consume_warnings()
     assert len(errors) == 0
     assert len(warnings) == 2
-    assert f'Non-checksummed eth address {non_checksummed_address}' in warnings[0]
-    assert f'Non-checksummed eth address {invalid_address}' in warnings[1]
+    assert f'Invalid ETH account in DB: {non_checksummed_address}' in warnings[0]
+    assert f'Invalid ETH account in DB: {invalid_address}' in warnings[1]
 
 
 def test_can_unlock_db_with_disabled_taxfree_after_period(data_dir, username):

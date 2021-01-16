@@ -46,8 +46,8 @@
         })
       }}
     </template>
-    <template #item.address="{ item }">
-      <v-row>
+    <template #item.label="{ item }">
+      <v-row class="pt-3 pb-2">
         <v-col cols="12" class="account-balance-table__account">
           <labeled-address-display :account="item" />
           <span v-if="item.tags.length > 0" class="mt-2">
@@ -303,7 +303,7 @@ export default class AccountBalanceTable extends Mixins(StatusMixin) {
   get headers(): DataTableHeader[] {
     const headers: DataTableHeader[] = [
       { text: '', value: 'accountSelection', width: '34px', sortable: false },
-      { text: this.$tc('account_balances.headers.account'), value: 'address' },
+      { text: this.$tc('account_balances.headers.account'), value: 'label' },
       { text: this.blockchain, value: 'balance.amount', align: 'end' },
       {
         text: this.$tc('account_balances.headers.usd-value-default'),

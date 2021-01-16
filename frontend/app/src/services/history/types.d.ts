@@ -1,5 +1,9 @@
 import { default as BigNumber } from 'bignumber.js';
-import { SupportedExchange } from '@/services/balances/types';
+import {
+  SupportedExchange,
+  SupportedTradeLocation
+} from '@/services/balances/types';
+import { TradeEntry } from '@/store/history/types';
 
 export type TradeType = 'buy' | 'sell';
 
@@ -17,19 +21,14 @@ export interface Trade {
   readonly notes: string;
 }
 
-export type NewTrade = Omit<Trade, 'tradeId'>;
+export type NewTrade = Omit<Trade, 'tradeId' | 'ignoredInAccounting'>;
 
 export interface TradeUpdate {
-  readonly trade: Trade;
+  readonly trade: TradeEntry;
   readonly oldTradeId: string;
 }
 
-export type TradeLocation =
-  | SupportedExchange
-  | 'ethereum'
-  | 'bitcoin'
-  | 'external'
-  | 'uniswap';
+export type TradeLocation = SupportedExchange | SupportedTradeLocation;
 
 type MovementCategory = 'deposit' | 'withdrawal';
 
@@ -59,4 +58,8 @@ export interface EthTransaction {
   readonly gasUsed: BigNumber;
   readonly inputData: string;
   readonly nonce: number;
+}
+
+export interface LedgerActionResult {
+  readonly identifier: number;
 }

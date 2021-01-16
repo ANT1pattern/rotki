@@ -137,8 +137,8 @@ Handling user creation, sign-in, log-out and querying
                   "taxfree_after_period": 31536000,
                   "balance_save_frequency": 24,
                   "include_gas_costs": true,
-                  "historical_data_start": "01/08/2015",
                   "eth_rpc_endpoint": "http://localhost:8545",
+                  "ksm_rpc_endpoint": "http://localhost:9933",
                   "main_currency": "USD",
                   "date_display_format": "%d/%m/%Y %H:%M:%S %Z",
                   "last_balance_save": 1571552172,
@@ -199,8 +199,8 @@ Handling user creation, sign-in, log-out and querying
                   "taxfree_after_period": 31536000,
                   "balance_save_frequency": 24,
                   "include_gas_costs": true,
-                  "historical_data_start": "01/08/2015",
                   "eth_rpc_endpoint": "http://localhost:8545",
+                  "ksm_rpc_endpoint": "http://localhost:9933",
                   "main_currency": "USD",
                   "date_display_format": "%d/%m/%Y %H:%M:%S %Z",
                   "last_balance_save": 1571552172,
@@ -564,8 +564,8 @@ Getting or modifying settings
               "taxfree_after_period": 31536000,
               "balance_save_frequency": 24,
               "include_gas_costs": true,
-              "historical_data_start": "01/08/2015",
               "eth_rpc_endpoint": "http://localhost:8545",
+              "ksm_rpc_endpoint": "http://localhost:9933",
               "main_currency": "USD",
               "date_display_format": "%d/%m/%Y %H:%M:%S %Z",
               "last_balance_save": 1571552172,
@@ -588,8 +588,8 @@ Getting or modifying settings
    :resjson int taxfree_after_period: The number of seconds after which holding a crypto in FIFO order is considered no longer taxable. Must be either a positive number, or -1. 0 is not a valid value. The default is 1 year, as per current german tax rules. Can also be set to ``-1`` which will then set the taxfree_after_period to ``null`` which means there is no taxfree period.
    :resjson int balance_save_frequency: The number of hours after which user balances should be saved in the DB again. This is useful for the statistics kept in the DB for each user. Default is 24 hours. Can't be less than 1 hour.
    :resjson bool include_gas_costs: A boolean denoting whether gas costs should be counted as loss in profit/loss calculation.
-   :resjson string historical_data_start: A date in the DAY/MONTH/YEAR format at which we consider historical data to have started.
    :resjson string eth_rpc_endpoint: A URL denoting the rpc endpoint for the ethereum node to use when contacting the ethereum blockchain. If it can not be reached or if it is invalid etherscan is used instead.
+   :resjson string ksm_rpc_endpoint: A URL denoting the rpc endpoint for the Kusama node to use when contacting the Kusama blockchain. If it can not be reached or if it is invalid any default public node (e.g. Parity) is used instead.
    :resjson string main_currency: The asset to use for all profit/loss calculation. USD by default.
    :resjson string date_display_format: The format in which to display dates in the UI. Default is ``"%d/%m/%Y %H:%M:%S %Z"``.
    :resjson int last_balance_save: The timestamp at which the balances were last saved in the database.
@@ -624,11 +624,11 @@ Getting or modifying settings
    :reqjson bool[optional] include_crypto2crypto: A boolean denoting whether crypto to crypto trades should be counted.
    :reqjson bool[optional] anonymized_logs: A boolean denoting whether sensitive logs should be anonymized.
    :reqjson int[optional] ui_floating_precision: The number of decimals points to be shown for floating point numbers in the UI. Can be between 0 and 8.
-   :resjson int[optional] taxfree_after_period: The number of seconds after which holding a crypto in FIFO order is considered no longer taxable. Must be either a positive number, or -1. 0 is not a valid value. The default is 1 year, as per current german tax rules. Can also be set to ``-1`` which will then set the taxfree_after_period to ``null`` which means there is no taxfree period.
+   :reqjson int[optional] taxfree_after_period: The number of seconds after which holding a crypto in FIFO order is considered no longer taxable. Must be either a positive number, or -1. 0 is not a valid value. The default is 1 year, as per current german tax rules. Can also be set to ``-1`` which will then set the taxfree_after_period to ``null`` which means there is no taxfree period.
    :reqjson int[optional] balance_save_frequency: The number of hours after which user balances should be saved in the DB again. This is useful for the statistics kept in the DB for each user. Default is 24 hours. Can't be less than 1 hour.
    :reqjson bool[optional] include_gas_costs: A boolean denoting whether gas costs should be counted as loss in profit/loss calculation.
-   :reqjson string[optional] historical_data_start: A date in the DAY/MONTH/YEAR format at which we consider historical data to have started.
    :reqjson string[optional] eth_rpc_endpoint: A URL denoting the rpc endpoint for the ethereum node to use when contacting the ethereum blockchain. If it can not be reached or if it is invalid etherscan is used instead.
+   :reqjson string[optional] ksm_rpc_endpoint: A URL denoting the rpc endpoint for the Kusama node to use when contacting the Kusama blockchain. If it can not be reached or if it is invalid any default public node (e.g. Parity) is used instead.
    :reqjson string[optional] main_currency: The FIAT currency to use for all profit/loss calculation. USD by default.
    :reqjson string[optional] date_display_format: The format in which to display dates in the UI. Default is ``"%d/%m/%Y %H:%M:%S %Z"``.
    :reqjson bool[optional] submit_usage_analytics: A boolean denoting wether or not to submit anonymous usage analytics to the Rotki server.
@@ -654,8 +654,8 @@ Getting or modifying settings
               "taxfree_after_period": 31536000,
               "balance_save_frequency": 24,
               "include_gas_costs": false,
-              "historical_data_start": "01/08/2015",
               "eth_rpc_endpoint": "http://localhost:8545",
+              "ksm_rpc_endpoint": "http://localhost:9933",
               "main_currency": "USD",
               "date_display_format": "%d/%m/%Y %H:%M:%S %Z",
               "last_balance_save": 1571552172,
@@ -1123,29 +1123,35 @@ Querying ethereum transactions
 
       { "result":
             "entries": [{
-                "tx_hash": "0x18807cd818b2b50a2284bda2dfc39c9f60607ccfa25b1a01143e934280675eb8",
-                "timestamp": 1598006527,
-                "block_number": 10703085,
-                "from_address": "0x3CAdbeB58CB5162439908edA08df0A305b016dA8",
-                "to_address": "0xF9986D445ceD31882377b5D6a5F58EaEa72288c3",
-                "value": "0",
-                "gas": "61676",
-                "gas_price": "206000000000",
-                "gas_used": "37154",
-                "input_data": "0xa9059cbb0000000000000000000000001934aa5cdb0677aaa12850d763bf8b60e7a3dbd4000000000000000000000000000000000000000000000179b9b29a80ae20ca00",
-                "nonce": 2720
+	        "entry": {
+		    "tx_hash": "0x18807cd818b2b50a2284bda2dfc39c9f60607ccfa25b1a01143e934280675eb8",
+		    "timestamp": 1598006527,
+		    "block_number": 10703085,
+		    "from_address": "0x3CAdbeB58CB5162439908edA08df0A305b016dA8",
+		    "to_address": "0xF9986D445ceD31882377b5D6a5F58EaEa72288c3",
+		    "value": "0",
+		    "gas": "61676",
+		    "gas_price": "206000000000",
+		    "gas_used": "37154",
+		    "input_data": "0xa9059cbb0000000000000000000000001934aa5cdb0677aaa12850d763bf8b60e7a3dbd4000000000000000000000000000000000000000000000179b9b29a80ae20ca00",
+		    "nonce": 2720
+	       },
+	       "ignored_in_accounting": false
             }, {
-                "tx_hash": "0x19807cd818b2b50a2284bda2dfc39c9f60607ccfa25b1a01143e934280635eb7",
-                "timestamp": 1588006528,
-                "block_number": 10700085,
-                "from_address": "0x1CAdbe158CB5162439901edA08df0A305b016dA1",
-                "to_address": "0xA9916D445ce1318A2377b3D6a5F58EaEa72288a1",
-                "value": "56000300000000000000000",
-                "gas": "610676",
-                "gas_price": "106000000000",
-                "gas_used": "270154",
-                "input_data": "0x",
-                "nonce": 55
+	        "entry": {
+		    "tx_hash": "0x19807cd818b2b50a2284bda2dfc39c9f60607ccfa25b1a01143e934280635eb7",
+		    "timestamp": 1588006528,
+		    "block_number": 10700085,
+		    "from_address": "0x1CAdbe158CB5162439901edA08df0A305b016dA1",
+		    "to_address": "0xA9916D445ce1318A2377b3D6a5F58EaEa72288a1",
+		    "value": "56000300000000000000000",
+		    "gas": "610676",
+		    "gas_price": "106000000000",
+		    "gas_used": "270154",
+		    "input_data": "0x",
+		    "nonce": 55
+		},
+		"ignored_in_accounting": true
             }],
             "entries_found": 95,
             "entries_limit": 500,
@@ -2029,24 +2035,27 @@ Dealing with trades
       {
           "result": {
               "entries": [{
-                  "trade_id": "dsadfasdsad",
-                  "timestamp": 1491606401,
-                  "location": "external",
-                  "pair": "BTC_EUR",
-                  "trade_type": "buy",
-                  "amount": "0.5541",
-                  "rate": "8422.1",
-                  "fee": "0.55",
-                  "fee_currency": "USD",
-                  "link": "Optional unique trade identifier"
-                  "notes": "Optional notes"
+	          "entry": {
+		      "trade_id": "dsadfasdsad",
+		      "timestamp": 1491606401,
+		      "location": "external",
+		      "pair": "BTC_EUR",
+		      "trade_type": "buy",
+		      "amount": "0.5541",
+		      "rate": "8422.1",
+		      "fee": "0.55",
+		      "fee_currency": "USD",
+		      "link": "Optional unique trade identifier",
+		      "notes": "Optional notes"
+		  },
+		  "ignored_in_accounting": false
               }],
               "entries_found": 95,
               "entries_limit": 250,
           "message": ""
       }
 
-   :resjson object entries: An array of trade objects.
+   :resjson object entries: An array of trade objects and their metadata. Each entry is composed of the main trade entry under the ``"entry"`` key and other metadata like ``"ignored_in_accounting"`` for each trade.
    :resjsonarr string trade_id: The uniquely identifying identifier for this trade.
    :resjsonarr int timestamp: The timestamp at which the trade occured
    :resjsonarr string location: A valid location at which the trade happened
@@ -2110,22 +2119,22 @@ Dealing with trades
 
       {
           "result": [{
-              "trade_id": "dsadfasdsad",
-              "timestamp": 1491606401,
-              "location": "external",
-              "pair": "BTC_EUR",
-              "trade_type": "buy",
-              "amount": "0.5541",
-              "rate": "8422.1",
-              "fee": "0.55",
-              "fee_currency": "USD",
-              "link": "Optional unique trade identifier"
-              "notes": "Optional notes"
-          }]
+		  "trade_id": "dsadfasdsad",
+		  "timestamp": 1491606401,
+		  "location": "external",
+		  "pair": "BTC_EUR",
+		  "trade_type": "buy",
+		  "amount": "0.5541",
+		  "rate": "8422.1",
+		  "fee": "0.55",
+		  "fee_currency": "USD",
+		  "link": "Optional unique trade identifier",
+		  "notes": "Optional notes"
+          }],
           "message": ""
       }
 
-   :resjson object result: Array of trades with the same schema as seen in `this <trades_schema_section_>`_ section.
+   :resjson object result: Array of trade entries with the same schema as seen in `this <trades_schema_section_>`_ section.
    :statuscode 200: Trades was succesfully added.
    :statuscode 400: Provided JSON is in some way malformed
    :statuscode 409: No user is currently logged in.
@@ -2264,24 +2273,27 @@ Querying asset movements
       {
           "result": {
               "entries": [{
-                  "identifier": "foo"
-                  "location": "kraken",
-                  "category": "deposit",
-                  "address": "0x78b0AD50E768D2376C6BA7de33F426ecE4e03e0B",
-                  "transaction_id": "3a4b9b2404f6e6fb556c3e1d46a9752f5e70a93ac1718605c992b80aacd8bd1d",
-                  "timestamp": 1451706400
-                  "asset": "ETH",
-                  "amount": "500.55",
-                  "fee_asset": "ETH",
-                  "fee": "0.1",
-                  "link": "optional exchange unique id",
+	          "entry": {
+		      "identifier": "foo"
+		      "location": "kraken",
+		      "category": "deposit",
+		      "address": "0x78b0AD50E768D2376C6BA7de33F426ecE4e03e0B",
+		      "transaction_id": "3a4b9b2404f6e6fb556c3e1d46a9752f5e70a93ac1718605c992b80aacd8bd1d",
+		      "timestamp": 1451706400
+		      "asset": "ETH",
+		      "amount": "500.55",
+		      "fee_asset": "ETH",
+		      "fee": "0.1",
+		      "link": "optional exchange unique id"
+		  },
+		  "ignored_in_accounting": false
               }],
               "entries_found": 80,
               "entries_limit": 100,
           "message": ""
       }
 
-   :resjson object entries: An array of deposit/withdrawal objects
+   :resjson object entries: An array of deposit/withdrawal objects and their metadata. Each entry is composed of the main movement entry under the ``"entry"`` key and other metadata like ``"ignored_in_accounting"`` for each asset movement.
    :resjsonarr string identifier: The uniquely identifying identifier for this asset movement
    :resjsonarr string location: A valid location at which the deposit/withdrawal occured
    :resjsonarr string category: Either ``"deposit"`` or ``"withdrawal"``
@@ -2300,6 +2312,232 @@ Querying asset movements
    :statuscode 409: No user is logged in.
    :statuscode 500: Internal Rotki error
    :statuscode 502: Error querying the remote for the asset movements
+
+
+Dealing with ledger actions
+=============================
+
+.. http:get:: /api/(version)/ledgeractions
+
+   .. note::
+      This endpoint can also be queried asynchronously by using ``"async_query": true``
+
+   .. note::
+      This endpoint also accepts parameters as query arguments.
+
+   Doing a GET on this endpoint will return all ledger actions of the current user. That means income, loss, expense and other actions. They can be further filtered by time range and/or location. If the user is not premium and has more than 50 actions then the returned results will be limited to that number. Any filtering will also be limited to those first 50 actions. Actions are returned most recent first.
+
+   **Example Request**:
+
+   .. http:example:: curl wget httpie python-requests
+
+      GET /api/1/ledgeractions HTTP/1.1
+      Host: localhost:5042
+
+      {"from_timestamp": 1451606400, "to_timestamp": 1571663098, "location": "blockchain"}
+
+   :reqjson int from_timestamp: The timestamp from which to query. Can be missing in which case we query from 0.
+   :reqjson int to_timestamp: The timestamp until which to query. Can be missing in which case we query until now.
+   :reqjson string location: Optionally filter actions by location. A valid location name has to be provided. If missing location filtering does not happen.
+   :param int from_timestamp: The timestamp from which to query. Can be missing in which case we query from 0.
+   :param int to_timestamp: The timestamp until which to query. Can be missing in which case we query until now.
+   :param string location: Optionally filter actions by location. A valid location name has to be provided. If missing location filtering does not happen.
+
+   .. _ledger_actions_schema_section:
+
+   **Example Response**:
+
+   .. sourcecode:: http
+
+      HTTP/1.1 200 OK
+      Content-Type: application/json
+
+      {
+          "result": {
+              "entries": [{
+	          "entry": {
+		      "identifier": 344,
+		      "timestamp": 1491606401,
+		      "action_type": "loss",
+		      "location": "blockchain",
+		      "amount": "1550",
+		      "asset": "DAI",
+		      "link": "https://etherscan.io/tx/0xea5594ad7a1e552f64e427b501676cbba66fd91bac372481ff6c6f1162b8a109"
+		      "notes": "The DAI I lost in the pickle finance hack"
+		  },
+		  "ignored_in_accounting": false
+              }],
+              "entries_found": 1,
+              "entries_limit": 50,
+          "message": ""
+      }
+
+   :resjson object entries: An array of action objects and their metadata. Each entry is composed of the ledger action entry under the ``"entry"`` key and other metadata like ``"ignored_in_accounting"`` for each action.
+   :resjsonarr int identifier: The uniquely identifying identifier for this action.
+   :resjsonarr int timestamp: The timestamp at which the action occured
+   :resjsonarr string action_type: The type of action. Valid types are: ``income``, ``loss``, ``donation received``, ``expense`` and ``dividends income``.
+   :resjsonarr string location: A valid location at which the action happened.
+   :resjsonarr string amount: The amount of asset for the action
+   :resjsonarr string asset: The asset for the action
+   :resjsonarr string link: Optional unique identifier or link to the action. Can be an empty string
+   :resjsonarr string notes: Optional notes about the action. Can be an empty string
+   :resjson int entries_found: The amount of actions found for the user. That disregards the filter and shows all actions found.
+   :resjson int entries_limit: The actions limit for the account tier of the user. If unlimited then -1 is returned.
+   :statuscode 200: Actions are succesfully returned
+   :statuscode 400: Provided JSON is in some way malformed
+   :statuscode 409: No user is logged in.
+   :statuscode 500: Internal Rotki error
+
+.. http:put:: /api/(version)/ledgeractions
+
+   Doing a PUT on this endpoint adds a new ledgeraction to Rotki's currently logged in user. The identifier of the new created action is returned.
+
+   **Example Request**:
+
+   .. http:example:: curl wget httpie python-requests
+
+      PUT /api/1/ledgeraction HTTP/1.1
+      Host: localhost:5042
+
+      {
+          "action": {
+	      "timestamp": 1491606401,
+	      "action_type": "income"
+	      "location": "external",
+	      "amount": "1",
+	      "asset": "ETH",
+	      "link": "Optional unique identifier",
+	      "notes": "Eth I received for being pretty"
+      }}
+
+   The request object is the same as above, a LedgerAction entry.
+
+   **Example Response**:
+
+   .. sourcecode:: http
+
+      HTTP/1.1 200 OK
+      Content-Type: application/json
+
+      {
+          "result": {"identifier": 1},
+          "message": ""
+      }
+
+   :resjson object result: The identifier ofthe newly created ledger action
+   :statuscode 200: Ledger action was succesfully added.
+   :statuscode 400: Provided JSON is in some way malformed
+   :statuscode 409: No user is currently logged in.
+   :statuscode 500: Internal Rotki error
+
+.. http:patch:: /api/(version)/ledgeractions
+
+   Doing a PATCH on this endpoint edits an existing ledger action in Rotki's currently logged in user using the given ``identifier``.
+
+   **Example Request**:
+
+   .. http:example:: curl wget httpie python-requests
+
+      PATCH /api/1/ledgeractions HTTP/1.1
+      Host: localhost:5042
+
+      {
+          "identifier": 55
+          "timestamp": 1491606401,
+	  "action_type": "income"
+          "location": "external",
+          "amount": "2",
+          "asset": "ETH",
+          "link": "Optional unique identifier",
+          "notes": "Eth I received for being pretty"
+      }
+
+   The request object is the same as above, a LedgerAction entry, with the addition of the identifier which signifies which ledger action entry will be edited.
+
+   **Example Response**:
+
+   .. sourcecode:: http
+
+      HTTP/1.1 200 OK
+      Content-Type: application/json
+
+      {
+          "result": {
+              "entries": [{
+	          "entry": {
+		      "identifier": 55,
+		      "timestamp": 1491606401,
+		      "action_type": "income"
+		      "location": "external",
+		      "amount": "2",
+		      "asset": "ETH",
+		      "link": "Optional unique identifier",
+		      "notes": "Eth I received for being pretty"
+		  },
+		  "ignored_in_accounting": false
+              }],
+              "entries_found": 1,
+              "entries_limit": 50,
+          "message": ""
+      }
+
+   :resjson object entries: An array of action objects after editing. Same schema as the get method.
+   :resjson int entries_found: The amount of actions found for the user. That disregards the filter and shows all actions found.
+   :resjson int entries_limit: The actions limit for the account tier of the user. If unlimited then -1 is returned.
+   :statuscode 200: Actions was succesfully edited.
+   :statuscode 400: Provided JSON is in some way malformed
+   :statuscode 409: No user is logged in.
+   :statuscode 500: Internal Rotki error
+
+.. http:delete:: /api/(version)/ledgeractions
+
+   Doing a DELETE on this endpoint deletes an existing ledger action in Rotki's currently logged in user using the ``identifier``.
+
+   **Example Request**:
+
+   .. http:example:: curl wget httpie python-requests
+
+      DELETE /api/1/ledgeractions HTTP/1.1
+      Host: localhost:5042
+
+      {"identifier" : 55}
+
+   :reqjson integer identifier: The ``identifier`` of the action to delete.
+
+   **Example Response**:
+
+   .. sourcecode:: http
+
+      HTTP/1.1 200 OK
+      Content-Type: application/json
+
+      {
+          "result": {
+              "entries": [{
+	          "entry": {
+		      "identifier": 35,
+		      "timestamp": 1491606401,
+		      "action_type": "income"
+		      "location": "external",
+		      "amount": "2",
+		      "asset": "ETH",
+		      "link": "Optional unique identifier",
+		      "notes": "Eth I received for being pretty"
+		  },
+		  "ignored_in_accounting": false
+              }],
+              "entries_found": 1,
+              "entries_limit": 50,
+          "message": ""
+      }
+
+   :resjson object entries: An array of action objects after deletion. Same schema as the get method.
+   :resjson int entries_found: The amount of actions found for the user. That disregards the filter and shows all actions found.
+   :resjson int entries_limit: The actions limit for the account tier of the user. If unlimited then -1 is returned.
+   :statuscode 200: Action was succesfully removed.
+   :statuscode 400: Provided JSON is in some way malformed
+   :statuscode 409: No user is logged in.
+   :statuscode 500: Internal Rotki error
 
 Querying messages to show to the user
 =====================================
@@ -2380,6 +2618,7 @@ Querying complete action history
               "overview": {
                   "loan_profit": "1500",
                   "defi_profit_loss": "140",
+                  "ledger_actions_profit_loss": "1500",
                   "margin_positions_profit_loss": "500",
                   "settlement_losses": "200",
                   "ethereum_transaction_gas_costs": "2.5",
@@ -2424,6 +2663,7 @@ Querying complete action history
 
    :resjson str loan_profit: The profit from loans inside the given time period denominated in the user's profit currency.
    :resjson str defi_profit_loss: The profit/loss from Decentralized finance events inside the given time period denominated in the user's profit currency.
+   :resjson str ledger_actions_profit_loss: The profit/loss from all the manually input ledger actions. Income, loss, expense and more.
    :resjson str margin_positions_profit_loss: The profit/loss from margin positions inside the given time period denominated in the user's profit currency.
    :resjson str settlement_losses: The losses from margin settlements inside the given time period denominated in the user's profit currency.
    :resjson str ethereum_transactions_gas_costs: The losses from ethereum gas fees inside the given time period denominated in the user's profit currency.
@@ -2539,6 +2779,9 @@ Getting blockchain account data
 ===============================
 .. http:get:: /api/(version)/blockchains/(name)/
 
+   .. note::
+      Supported blockchains: ``"BTC", "ETH", "KSM"``
+
    Doing a GET on the blokchcains endpoint with a specific blockchain queries account data information for that blockchain.
 
    **Example Request**:
@@ -2566,6 +2809,10 @@ Getting blockchain account data
               "address": "0x19b0AD50E768D2376C6BA7de32F426ecE4e03e0b",
               "label": null,
               "tags": ["private"]
+           }, {
+              "address": "G7UkJAutjbQyZGRiP8z5bBSBPBJ66JbTKAkFDq3cANwENyX",
+              "label": "my Kusama account",
+              "tags": null
            }],
            "message": "",
       }
@@ -4830,6 +5077,8 @@ Adding blockchain accounts
 .. http:put:: /api/(version)/blockchains/(name)/
 
    .. note::
+      Supported blockchains: ``"BTC", "ETH", "KSM"``
+
       This endpoint can also be queried asynchronously by using ``"async_query": true``
 
    Doing a PUT on the the blockchains endpoint with a specific blockchain URL and a list of account data in the json data will add these accounts to the tracked accounts for the given blockchain and the current user. The updated balances after the account additions are returned.
@@ -4904,13 +5153,20 @@ Adding blockchain accounts
                            "GNO": {"amount": "1", "usd_value": "50"},
                            "RDN": {"amount": "1", "usd_value": "1.5"}
                        },
-                  "liabilities": {}
-                  }}
+                       "liabilities": {}
+                   },
+                   "KSM": { "G7UkJAutjbQyZGRiP8z5bBSBPBJ66JbTKAkFDq3cANwENyX": {
+                       "assets": {
+                           "KSM": {"amount": "12", "usd_value": "894.84"}
+                        },
+                       "liabilities": {}
+                    }
               },
               "totals": {
                   "assets": {
                       "BTC": {"amount": "1", "usd_value": "7540.15"},
                       "ETH": {"amount": "10", "usd_value": "1650.53"},
+                      "KSM": {"amount": "12", "usd_value": "894.84"},
                       "RDN": {"amount": "1", "usd_value": "1.5"},
                       "GNO": {"amount": "1", "usd_value": "50"}
                   },
@@ -5208,6 +5464,8 @@ Editing blockchain account data
 
 .. http:patch:: /api/(version)/blockchains/(name)/
 
+   .. note::
+      Supported blockchains: ``"BTC", "ETH", "KSM"``
 
    Doing a PATCH on the the blockchains endpoint with a specific blockchain URL and a list of accounts to edit will edit the label and tags for those accounts.
 
@@ -5268,6 +5526,8 @@ Removing blockchain accounts
 .. http:delete:: /api/(version)/blockchains/(name)/
 
    .. note::
+      Supported blockchains: ``"BTC", "ETH", "KSM"``
+
       This endpoint can also be queried asynchronously by using ``"async_query": true``
 
    Doing a DELETE on the the blockchains endpoint with a specific blockchain URL and a list of accounts in the json data will remove these accounts from the tracked accounts for the given blockchain and the current user. The updated balances after the account deletions are returned.
@@ -5940,7 +6200,7 @@ Dealing with ignored actions
 
 .. http:get:: /api/(version)/actions/ignored
 
-   Doing a GET on the ignored actions endpoint will return a list of all action identifiers that the user has set to have ignored during accounting.
+   Doing a GET on the ignored actions endpoint will return a mapping of lists of all action identifiers that the user has set to have ignored during accounting. User can also specify a specific action type to get only that type's mapping.
 
 
    **Example Request**:
@@ -5950,6 +6210,10 @@ Dealing with ignored actions
       GET /api/1/actions/ignored HTTP/1.1
       Host: localhost:5042
 
+      {"action_type": "trade"}
+
+   :reqjson str action_type: A type of actions whose ignored ids to return. If it is not specified a mapping of all action types is returned. Valid action types are: ``trade``, ``asset movement``, ``ethereum_transaction`` and ``ledger action``.
+
    **Example Response**:
 
    .. sourcecode:: http
@@ -5958,11 +6222,14 @@ Dealing with ignored actions
       Content-Type: application/json
 
       {
-          "result": ["X124-JYI", "2325"],
+          "result": {
+	      "trade": ["X124-JYI", "2325"],
+	      "ethereum_transaction": ["0xfoo", "0xboo"]
+	  },
           "message": ""
       }
 
-   :resjson list result: A list of action identifiers that will be ignored during accounting
+   :resjson list result: A mapping to a list of action identifiers that will be ignored during accounting for each type of action.
    :statuscode 200: Actions succesfully queried
    :statuscode 400: Provided JSON or data is in some way malformed.
    :statuscode 409: User is not logged in.
@@ -5970,7 +6237,7 @@ Dealing with ignored actions
 
 .. http:put:: /api/(version)/actions/ignored
 
-   Doing a PUT on the ignored actions endpoint will add action identifiers for ignoring during accounting. Returns the list of all ignored action identifiers after the addition.
+   Doing a PUT on the ignored actions endpoint will add action identifiers for ignoring of a given action type during accounting. Returns the list of all ignored action identifiers of the given type after the addition.
 
 
    **Example Request**:
@@ -5980,8 +6247,9 @@ Dealing with ignored actions
       PUT /api/1/actions/ignored HTTP/1.1
       Host: localhost:5042
 
-      {"action_ids": ["Z231-XH23K"]}
+      {"action_type": "ledger action", ""action_ids": ["Z231-XH23K"]}
 
+   :reqjson str action_type: A type of actions whose ignored ids to add. Defined above.
    :reqjson list action_ids: A list of action identifiers to add to the ignored actions for accounting
 
    **Example Response**:
@@ -5992,11 +6260,11 @@ Dealing with ignored actions
       Content-Type: application/json
 
       {
-          "result": ["Z231-XH23K", "X124-JYI", "2325"],
+          "result": {"ledger_action": ["Z231-XH23K", "X124-JYI", "2325"]},
           "message": ""
       }
 
-   :resjson list result: A list of action identifiers that are ignored during accounting.
+   :resjson list result: A mapping to a list of action identifiers that are ignored during accounting for the given action type.
    :statuscode 200: Action ids succesfully added
    :statuscode 400: Provided JSON or data is in some way malformed.
    :statuscode 409: User is not logged in. One of the action ids provided is already on the list.
@@ -6004,7 +6272,7 @@ Dealing with ignored actions
 
 .. http:delete:: /api/(version)/actions/ignored/
 
-   Doing a DELETE on the ignored actions endpoint removes action ids from the list of actions to be ignored during accounting.
+   Doing a DELETE on the ignored actions endpoint removes action ids from the list of actions of the given type to be ignored during accounting.
 
 
    **Example Request**:
@@ -6014,9 +6282,10 @@ Dealing with ignored actions
       DELETE /api/1/actions/ignored HTTP/1.1
       Host: localhost:5042
 
-      {"action_ids": ["2325"]}
+      {"action_type": "asset movement", "action_ids": ["2325"]}
 
-   :reqjson list action_ids: A list of action identifiers to remove from the ignored action ids list.
+   :reqjson str action_type: A type of actions whose ignored ids to remove. Defined above.
+   :reqjson list action_ids: A list of action identifiers to remove from the ignored action ids list for the action type.
 
    **Example Response**:
 
@@ -6026,7 +6295,7 @@ Dealing with ignored actions
       Content-Type: application/json
 
       {
-          "result": ["Z231-XH23K", "X124-JYI"],
+          "result": {"asset movement": ["Z231-XH23K", "X124-JYI"]},
           "message": ""
       }
 

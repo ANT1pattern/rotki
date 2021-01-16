@@ -2,6 +2,18 @@
 Changelog
 =========
 
+* :release:`1.12.0 <2021-01-16>`
+* :feature:`968` Rotki will now run some heavier tasks periodically in the background to alleviate the alleviate the pressure from big tasks like the profit loss report. These tasks for now are: exchanges trades query, ethereum transactions query, cryptocompare historical price queries and xpub address derivation.
+* :feature:`2015` Users can now selectively ignores trades, deposits/withdrawals, ethereum transactions and ledger actions in the accounting processing of the profit loss report.
+* :feature:`1920` Rotki now supports addition of a custom Kusama endpoint.
+* :feature:`1662` Users are now able to manually input ledger actions such as Income, Donation, Loss, Expense, Dividends Income.
+* :feature:`1866` The tax report is now named Profit and Loss Report.
+* :feature:`1466` The account label is now renamed to account name.
+* :bug:`1140` Users will now see the account balances sorted by label instead of hex when sorting the account column.
+* :feature:`1919` Rotki now supports Kusama blockchain. Users can import their Kusama addresses and see their KSM balances.
+* :feature:`1792` Users should now be able to see the accounting settings used when generating a tax report.
+* :bug:`1946` There should no longer be a non 0-100 percentage in the tax report during the progress report.
+* :feature:`522` Users can connect to different backends from the frontend.
 * :bug:`2040` Balance snapshotting should now work again for Bitfinex and Bitstamp users.
 * :feature:`2056` Users can now control whether a profit loss report in a certain time range is allowed to go further in the past to calculate the real cost basis of assets or not. By default this setting is on.
 * :feature:`2008` Users can now search for a currency in the currency selection UI.
@@ -11,6 +23,8 @@ Changelog
 * :bug:`2013` Show correct fee currency for Bitfinex trades.
 * :feature:`991` Add Bitcoin.de exchange.
 * :feature:`629` Add ICONOMI exchange. Balances and trades of single assets can be imported.
+* :bug:`1759` Xpub address derivation after restart of the app from an existing xpub should no longer miss addresses
+* :bug:`2047` Fix balances query for users of Binance.us
 
 * :feature:`-` Added support for the following tokens:
 
@@ -18,6 +32,22 @@ Changelog
   - `Exeedme (XED) <https://www.coingecko.com/en/coins/exeedme>`__
   - `Terra Virtua Kolect (TVK) <https://www.coingecko.com/en/coins/terra-virtua-kolect>`__
   - `Celsius network token (CEL) <https://www.coingecko.com/en/coins/celsius-network-token>`__
+  - `BTC Standard Hashrate Token (BTCST) <https://www.coingecko.com/en/coins/btc-standard-hashrate-token>`__
+  - `Stakenet (XSN) <https://www.coingecko.com/en/coins/stakenet>`__
+  - `e-Radix (EXRD) <https://www.coingecko.com/en/coins/e-radix>`__
+  - `BitcoinV (BTCV) <https://www.coingecko.com/en/coins/bitcoinv>`__
+  - `GOLD (GOLD) <https://www.coingecko.com/en/coins/gold>`__
+  - `KOK Coin (KOK) <https://www.coingecko.com/en/coins/kok-coin>`__
+  - `Oxen (OXEN) <https://www.coingecko.com/en/coins/oxen>`__
+  - `Carry (CRE) <https://www.coingecko.com/en/coins/carry>`__
+  - `Alchemy Pay (ACH) <https://www.coingecko.com/en/coins/alchemy-pay>`__
+  - `Basis Cash (BAC) <https://www.coingecko.com/en/coins/basis-cash>`__
+  - `BarnBridge (BOND) <https://www.coingecko.com/en/coins/barnbridge>`__
+  - `Furucombo (COMBO) <https://www.coingecko.com/en/coins/furucombo>`__
+  - `Cudos (CUDOS) <https://www.coingecko.com/en/coins/cudos>`__
+  - `Tokenlon (LON) <https://www.coingecko.com/en/coins/tokenlon>`__
+  - `pBTC35A (PBTC35A) <https://www.coingecko.com/en/coins/pbtc35a>`__
+  - `KeeperDAO (ROOK) <https://www.coingecko.com/en/coins/keeperdao>`__
 
 * :release:`1.11.0 <2020-12-30>`
 * :bug:`1929` Premium users will be able to see the proper balances after a force pull.

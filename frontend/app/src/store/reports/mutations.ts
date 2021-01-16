@@ -1,12 +1,17 @@
 import { MutationTree } from 'vuex';
-import { EventEntry, TradeHistoryOverview } from '@/model/trade-history-types';
-import { defaultState, TaxReportState } from '@/store/reports/state';
+import {
+  EventEntry,
+  ProfitLossOverviewData
+} from '@/model/trade-history-types';
+import { defaultState, ReportState } from '@/store/reports/state';
+import { ReportPeriod } from '@/store/reports/types';
+import { AccountingSettings } from '@/typing/types';
 
-export const mutations: MutationTree<TaxReportState> = {
+export const mutations: MutationTree<ReportState> = {
   set(
-    state: TaxReportState,
+    state: ReportState,
     payload: {
-      overview: TradeHistoryOverview;
+      overview: ProfitLossOverviewData;
       events: EventEntry[];
       currency: string;
     }
@@ -17,25 +22,30 @@ export const mutations: MutationTree<TaxReportState> = {
     state.loaded = true;
   },
 
-  currency(state: TaxReportState, currency: string) {
+  currency(state: ReportState, currency: string) {
     state.currency = currency;
   },
 
   historyProcess(
-    state: TaxReportState,
+    state: ReportState,
     payload: { start: number; current: number }
   ) {
     state.historyStart = payload.start;
     state.historyProcess = payload.current;
   },
 
-  reportPeriod(state: TaxReportState, payload: { start: number; end: number }) {
+  reportPeriod(state: ReportState, payload: ReportPeriod) {
     state.historyProcess = payload.start;
     state.historyStart = payload.start;
     state.historyEnd = payload.end;
+    state.reportPeriod = payload;
   },
 
-  reset(state: TaxReportState) {
+  accountingSettings(state: ReportState, payload: AccountingSettings) {
+    state.accountingSettings = payload;
+  },
+
+  reset(state: ReportState) {
     Object.assign(state, defaultState());
   }
 };

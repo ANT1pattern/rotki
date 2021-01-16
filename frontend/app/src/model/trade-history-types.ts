@@ -18,6 +18,7 @@ export interface ApiEventEntry {
 }
 
 interface ApiTradeHistoryOverview {
+  readonly ledger_actions_profit_loss: string;
   readonly loan_profit: string;
   readonly defi_profit_loss: string;
   readonly margin_positions_profit_loss: string;
@@ -35,10 +36,11 @@ export interface TradeHistory {
   readonly all_events: ApiEventEntry[];
 }
 
-export interface TradeHistoryOverview {
+export interface ProfitLossOverviewData {
   readonly loanProfit: BigNumber;
   readonly defiProfitLoss: BigNumber;
   readonly marginPositionsProfitLoss: BigNumber;
+  readonly ledgerActionsProfitLoss: BigNumber;
   readonly settlementLosses: BigNumber;
   readonly ethereumTransactionGasCosts: BigNumber;
   readonly assetMovementFees: BigNumber;
@@ -64,12 +66,13 @@ export interface EventEntry {
   readonly isVirtual: boolean;
 }
 
-export const tradeHistoryPlaceholder = (): TradeHistoryOverview => ({
+export const tradeHistoryPlaceholder = (): ProfitLossOverviewData => ({
   loanProfit: Zero,
   defiProfitLoss: Zero,
   marginPositionsProfitLoss: Zero,
   settlementLosses: Zero,
   ethereumTransactionGasCosts: Zero,
+  ledgerActionsProfitLoss: Zero,
   assetMovementFees: Zero,
   generalTradeProfitLoss: Zero,
   taxableTradeProfitLoss: Zero,
@@ -77,9 +80,10 @@ export const tradeHistoryPlaceholder = (): TradeHistoryOverview => ({
   totalProfitLoss: Zero
 });
 
+//TODO: Migrate to auto conversion
 export const convertTradeHistoryOverview = (
   overview: ApiTradeHistoryOverview
-): TradeHistoryOverview => ({
+): ProfitLossOverviewData => ({
   loanProfit: bigNumberify(overview.loan_profit),
   marginPositionsProfitLoss: bigNumberify(
     overview.margin_positions_profit_loss
@@ -89,6 +93,7 @@ export const convertTradeHistoryOverview = (
   ethereumTransactionGasCosts: bigNumberify(
     overview.ethereum_transaction_gas_costs
   ),
+  ledgerActionsProfitLoss: bigNumberify(overview.ledger_actions_profit_loss),
   assetMovementFees: bigNumberify(overview.asset_movement_fees),
   generalTradeProfitLoss: bigNumberify(overview.general_trade_profit_loss),
   taxableTradeProfitLoss: bigNumberify(overview.taxable_trade_profit_loss),

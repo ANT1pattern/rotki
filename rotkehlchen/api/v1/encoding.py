@@ -9,11 +9,13 @@ from marshmallow import Schema, fields, post_load, validates_schema
 from marshmallow.exceptions import ValidationError
 from webargs.compat import MARSHMALLOW_VERSION_INFO
 
+from rotkehlchen.accounting.structures import LedgerAction, LedgerActionType, ActionType
 from rotkehlchen.assets.asset import Asset
 from rotkehlchen.balances.manual import ManuallyTrackedBalance
 from rotkehlchen.chain.bitcoin.hdkey import HDKey, XpubType
 from rotkehlchen.chain.bitcoin.utils import is_valid_btc_address, is_valid_derivation_path
 from rotkehlchen.chain.ethereum.manager import EthereumManager
+from rotkehlchen.chain.substrate.utils import is_valid_kusama_address
 from rotkehlchen.constants.misc import ZERO
 from rotkehlchen.db.settings import ModifiableDBSettings
 from rotkehlchen.errors import DeserializationError, UnknownAsset, XPUBError
@@ -21,9 +23,11 @@ from rotkehlchen.exchanges.kraken import KrakenAccountType
 from rotkehlchen.exchanges.manager import SUPPORTED_EXCHANGES
 from rotkehlchen.fval import FVal
 from rotkehlchen.serialization.deserialize import (
+    deserialize_action_type,
     deserialize_asset_amount,
     deserialize_fee,
     deserialize_hex_color_code,
+    deserialize_ledger_action_type,
     deserialize_location,
     deserialize_price,
     deserialize_timestamp,
@@ -279,13 +283,12 @@ class BlockchainField(fields.Field):
             **_kwargs: Any,
     ) -> SupportedBlockchain:
         if value in ('btc', 'BTC'):
-            blockchain = SupportedBlockchain.BITCOIN
-        elif value in ('eth', 'ETH'):
-            blockchain = SupportedBlockchain.ETHEREUM
-        else:
-            raise ValidationError(f'Unrecognized value {value} given for blockchain name')
-
-        return blockchain
+            return SupportedBlockchain.BITCOIN
+        if value in ('eth', 'ETH'):
+            return SupportedBlockchain.ETHEREUM
+        if value in ('ksm', 'KSM'):
+            return SupportedBlockchain.KUSAMA
+        raise ValidationError(f'Unrecognized value {value} given for blockchain name')
 
 
 class AssetField(fields.Field):
@@ -387,6 +390,58 @@ class TradePairField(fields.Field):
             raise ValidationError(str(e)) from e
 
         return trade_pair
+
+
+class LedgerActionTypeField(fields.Field):
+
+    @staticmethod
+    def _serialize(
+            value: LedgerActionType,
+            attr: str,  # pylint: disable=unused-argument
+            obj: Any,  # pylint: disable=unused-argument
+            **_kwargs: Any,
+    ) -> str:
+        return str(value)
+
+    def _deserialize(
+            self,
+            value: str,
+            attr: Optional[str],  # pylint: disable=unused-argument
+            data: Optional[Mapping[str, Any]],  # pylint: disable=unused-argument
+            **_kwargs: Any,
+    ) -> LedgerActionType:
+        try:
+            action_type = deserialize_ledger_action_type(value)
+        except DeserializationError as e:
+            raise ValidationError(str(e)) from e
+
+        return action_type
+
+
+class ActionTypeField(fields.Field):
+
+    @staticmethod
+    def _serialize(
+            value: ActionType,
+            attr: str,  # pylint: disable=unused-argument
+            obj: Any,  # pylint: disable=unused-argument
+            **_kwargs: Any,
+    ) -> str:
+        return str(value)
+
+    def _deserialize(
+            self,
+            value: str,
+            attr: Optional[str],  # pylint: disable=unused-argument
+            data: Optional[Mapping[str, Any]],  # pylint: disable=unused-argument
+            **_kwargs: Any,
+    ) -> ActionType:
+        try:
+            action_type = deserialize_action_type(value)
+        except DeserializationError as e:
+            raise ValidationError(str(e)) from e
+
+        return action_type
 
 
 class LocationField(fields.Field):
@@ -608,6 +663,36 @@ class TradeSchema(Schema):
     notes = fields.String(missing='')
 
 
+class LedgerActionSchema(Schema):
+    timestamp = TimestampField(required=True)
+    action_type = LedgerActionTypeField(required=True)
+    location = LocationField(required=True)
+    amount = AmountField(required=True)
+    asset = AssetField(required=True)
+    link = fields.String(missing='')
+    notes = fields.String(missing='')
+
+
+class LedgerActionWithIdentifierSchema(LedgerActionSchema):
+    identifier = fields.Integer(required=True)
+
+    @post_load  # type: ignore
+    def make_ledger_action(  # pylint: disable=no-self-use
+            self,
+            data: Dict[str, Any],
+            **_kwargs: Any,
+    ) -> LedgerAction:
+        return LedgerAction(**data)
+
+
+class LedgerActionEditSchema(Schema):
+    action = fields.Nested(LedgerActionWithIdentifierSchema, required=True)
+
+
+class LedgerActionIdentifierSchema(Schema):
+    identifier = fields.Integer(required=True)
+
+
 class ManuallyTrackedBalanceSchema(Schema):
     asset = AssetField(required=True)
     label = fields.String(required=True)
@@ -684,10 +769,9 @@ class ModifiableSettingsSchema(Schema):
     )
     include_gas_costs = fields.Bool(missing=None)
     # TODO: Add some validation to this field
-    historical_data_start = fields.String(missing=None)
-    # TODO: Add some validation to this field
     # even though it gets validated since we try to connect to it
     eth_rpc_endpoint = fields.String(missing=None)
+    ksm_rpc_endpoint = fields.String(missing=None)
     main_currency = AssetField(missing=None)
     # TODO: Add some validation to this field
     date_display_format = fields.String(missing=None)
@@ -733,8 +817,8 @@ class ModifiableSettingsSchema(Schema):
             taxfree_after_period=data['taxfree_after_period'],
             balance_save_frequency=data['balance_save_frequency'],
             include_gas_costs=data['include_gas_costs'],
-            historical_data_start=data['historical_data_start'],
             eth_rpc_endpoint=data['eth_rpc_endpoint'],
+            ksm_rpc_endpoint=data['ksm_rpc_endpoint'],
             main_currency=data['main_currency'],
             date_display_format=data['date_display_format'],
             submit_usage_analytics=data['submit_usage_analytics'],
@@ -986,6 +1070,24 @@ def _validate_blockchain_account_schemas(
                 )
             given_addresses.add(address)
 
+    # Make sure kusama addresses are valid
+    # TODO: support ENS domains (.eth addresses)
+    # https://guide.kusama.network/docs/en/mirror-ens
+    elif data['blockchain'] == SupportedBlockchain.KUSAMA:
+        for account_data in data['accounts']:
+            address = address_getter(account_data)
+            if not is_valid_kusama_address(address):
+                raise ValidationError(
+                    f'Given value {address} is not a valid kusama address',
+                    field_name='address',
+                )
+            if address in given_addresses:
+                raise ValidationError(
+                    f'Address {address} appears multiple times in the request data',
+                    field_name='address',
+                )
+            given_addresses.add(address)
+
 
 def _transform_eth_address(
         ethereum: EthereumManager, given_address: str) -> ChecksumEthAddress:
@@ -1077,7 +1179,12 @@ class IgnoredAssetsSchema(Schema):
     assets = fields.List(AssetField(), required=True)
 
 
-class IgnoredActionsSchema(Schema):
+class IgnoredActionsGetSchema(Schema):
+    action_type = ActionTypeField(missing=None)
+
+
+class IgnoredActionsModifySchema(Schema):
+    action_type = ActionTypeField(required=True)
     action_ids = fields.List(fields.String(required=True), required=True)
 
 

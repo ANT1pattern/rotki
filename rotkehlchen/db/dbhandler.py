@@ -4,16 +4,16 @@ import os
 import re
 import shutil
 import tempfile
+from collections import defaultdict
 from json.decoder import JSONDecodeError
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union, cast
 
-from eth_utils import is_checksum_address
-from eth_utils.typing import HexStr
+from eth_typing import HexStr
 from pysqlcipher3 import dbapi2 as sqlcipher
 from typing_extensions import Literal
 
-from rotkehlchen.accounting.structures import Balance, BalanceType
+from rotkehlchen.accounting.structures import ActionType, Balance, BalanceType
 from rotkehlchen.assets.asset import Asset, EthereumToken
 from rotkehlchen.balances.manual import ManuallyTrackedBalance
 from rotkehlchen.chain.bitcoin.hdkey import HDKey
@@ -44,7 +44,7 @@ from rotkehlchen.chain.ethereum.uniswap import (
     UNISWAP_TRADES_PREFIX,
     UniswapPoolEvent,
 )
-from rotkehlchen.constants.assets import A_USD, S_BTC, S_ETH
+from rotkehlchen.constants.assets import A_USD
 from rotkehlchen.constants.ethereum import YEARN_VAULTS_PREFIX
 from rotkehlchen.db.schema import DB_SCRIPT_CREATE_TABLES
 from rotkehlchen.db.settings import (
@@ -65,6 +65,7 @@ from rotkehlchen.db.utils import (
     deserialize_tags_from_db,
     form_query_to_filter_timestamps,
     insert_tag_mappings,
+    is_valid_db_blockchain_account,
     str_to_bool,
 )
 from rotkehlchen.errors import (
@@ -83,6 +84,7 @@ from rotkehlchen.fval import FVal
 from rotkehlchen.logging import RotkehlchenLogsAdapter
 from rotkehlchen.premium.premium import PremiumCredentials
 from rotkehlchen.serialization.deserialize import (
+    deserialize_action_type_from_db,
     deserialize_asset_amount,
     deserialize_asset_movement_category_from_db,
     deserialize_fee,
@@ -657,32 +659,70 @@ class DBHandler:
         )
         return [Asset(q[0]) for q in cursor]
 
-    def add_to_ignored_action_ids(self, identifiers: List[str]) -> None:
+    def add_to_ignored_action_ids(self, action_type: ActionType, identifiers: List[str]) -> None:
+        """Adds a list of identifiers to be ignored for a given action type
+
+        Raises InputError in case of adding already existing ignored action
+        """
         cursor = self.conn.cursor()
-        tuples = [('ignored_action', x) for x in identifiers]
-        cursor.executemany(
-            'INSERT INTO multisettings(name, value) VALUES(?, ?)',
-            tuples,
-        )
+        tuples = [(action_type.serialize_for_db(), x) for x in identifiers]
+        try:
+            cursor.executemany(
+                'INSERT INTO ignored_actions(type, identifier) VALUES(?, ?)',
+                tuples,
+            )
+        except sqlcipher.IntegrityError as e:  # pylint: disable=no-member
+            raise InputError('One of the given action ids already exists in the dataase') from e
+
         self.conn.commit()
         self.update_last_write()
 
-    def remove_from_ignored_action_ids(self, identifiers: List[str]) -> None:
+    def remove_from_ignored_action_ids(
+            self,
+            action_type: ActionType,
+            identifiers: List[str],
+    ) -> None:
+        """Removes a list of identifiers to be ignored for a given action type
+
+        Raises InputError in case of removing an action that is not in the DB
+        """
         cursor = self.conn.cursor()
-        tuples = [(x,) for x in identifiers]
+        tuples = [(action_type.serialize_for_db(), x) for x in identifiers]
         cursor.executemany(
-            'DELETE FROM multisettings WHERE name="ignored_action" AND value=?;',
+            'DELETE FROM ignored_actions WHERE type=? AND identifier=?;',
             tuples,
         )
+        affected_rows = cursor.rowcount
+        if affected_rows != len(identifiers):
+            self.conn.rollback()
+            raise InputError(
+                f'Tried to remove {len(identifiers) - affected_rows} '
+                f'ignored actions that do not exist',
+            )
         self.conn.commit()
         self.update_last_write()
 
-    def get_ignored_action_ids(self) -> List[str]:
+    def get_ignored_action_ids(
+            self,
+            action_type: Optional[ActionType],
+    ) -> Dict[ActionType, List[str]]:
         cursor = self.conn.cursor()
-        cursor.execute(
-            'SELECT value FROM multisettings WHERE name="ignored_action";',
-        )
-        return [q[0] for q in cursor]
+        query = 'SELECT type, identifier from ignored_actions'
+
+        tuples: Tuple
+        if action_type is None:
+            query += ';'
+            tuples = ()
+        else:
+            query += ' WHERE type=?;'
+            tuples = (action_type.serialize_for_db(),)
+
+        result = cursor.execute(query, tuples)
+        mapping = defaultdict(list)
+        for entry in result:
+            mapping[deserialize_action_type_from_db(entry[0])].append(entry[1])
+
+        return mapping
 
     def add_multiple_balances(self, balances: List[AssetBalance]) -> None:
         """Execute addition of multiple balances in the DB"""
@@ -1331,9 +1371,10 @@ class DBHandler:
         )
         affected_rows = cursor.rowcount
         if affected_rows != len(accounts):
+            self.conn.rollback()
             raise InputError(
                 f'Tried to remove {len(accounts) - affected_rows} '
-                f'f{blockchain.value} accounts that do not exist',
+                f'{blockchain.value} accounts that do not exist',
             )
 
         # Also remove all ethereum address details saved in the D
@@ -1514,26 +1555,30 @@ class DBHandler:
 
         eth_list = []
         btc_list = []
-
+        ksm_list = []
+        supported_blockchains = {blockchain.value for blockchain in SupportedBlockchain}
         for entry in query:
-            if entry[0] == S_ETH:
-                if not is_checksum_address(entry[1]):
-                    self.msg_aggregator.add_warning(
-                        f'Non-checksummed eth address {entry[1]} detected in the DB. This '
-                        f'should not happen unless the DB was manually modified. '
-                        f'Skipping entry. This needs to be fixed manually. If you '
-                        f'can not do that alone ask for help in the issue tracker',
-                    )
-                    continue
-                eth_list.append(entry[1])
-            elif entry[0] == S_BTC:
-                btc_list.append(entry[1])
-            else:
-                log.warning(
-                    f'unknown blockchain type {entry[0]} found in DB. Ignoring...',
-                )
+            if entry[0] not in supported_blockchains:
+                log.warning(f'Unknown blockchain {entry[0]} found in DB. Ignoring...')
+                continue
 
-        return BlockchainAccounts(eth=eth_list, btc=btc_list)
+            if not is_valid_db_blockchain_account(blockchain=entry[0], account=entry[1]):
+                self.msg_aggregator.add_warning(
+                    f'Invalid {entry[0]} account in DB: {entry[1]}. '
+                    f'This should not happen unless the DB was manually modified. '
+                    f'Skipping entry. This needs to be fixed manually. If you '
+                    f'can not do that alone ask for help in the issue tracker',
+                )
+                continue
+
+            if entry[0] == SupportedBlockchain.BITCOIN.value:
+                btc_list.append(entry[1])
+            elif entry[0] == SupportedBlockchain.ETHEREUM.value:
+                eth_list.append(entry[1])
+            elif entry[0] == SupportedBlockchain.KUSAMA.value:
+                ksm_list.append(entry[1])
+
+        return BlockchainAccounts(eth=eth_list, btc=btc_list, ksm=ksm_list)
 
     def get_blockchain_account_data(
             self,
@@ -1677,6 +1722,7 @@ class DBHandler:
         )
         affected_rows = cursor.rowcount
         if affected_rows != len(labels):
+            self.conn.rollback()
             raise InputError(
                 f'Tried to remove {len(labels) - affected_rows} '
                 f'manually tracked balance labels that do not exist',
@@ -2063,6 +2109,7 @@ class DBHandler:
                 'trades',
                 'ethereum_transactions',
                 'amm_swaps',
+                'ledger_actions',
             ],
             op: Literal['OR', 'AND'] = 'OR',
             **kwargs: Any,
@@ -3051,24 +3098,34 @@ class DBHandler:
 
         return result
 
-    def get_last_xpub_derived_indices(self, xpub_data: XpubData) -> Tuple[int, int]:
-        """Get the last known receiving and change derived indices from the given xpub"""
+    def get_last_consecutive_xpub_derived_indices(self, xpub_data: XpubData) -> Tuple[int, int]:
+        """
+        Get the last known receiving and change derived indices from the given
+        xpub that are consecutive since the beginning.
+
+        For example if we have derived indices 0, 1, 4, 5 then this will return 1.
+
+        This tells us from where to start deriving again safely
+        """
         cursor = self.conn.cursor()
-        result = cursor.execute(
-            'SELECT MAX(derived_index) from xpub_mappings WHERE xpub=? AND '
-            'derivation_path IS ? AND account_index=0;',
-            (xpub_data.xpub.xpub, xpub_data.serialize_derivation_path_for_db()),
-        )
-        result = result.fetchall()
-        last_receiving_idx = int(result[0][0]) if result[0][0] is not None else 0
-        result = cursor.execute(
-            'SELECT MAX(derived_index) from xpub_mappings WHERE xpub=? AND '
-            'derivation_path IS ? AND account_index=1;',
-            (xpub_data.xpub.xpub, xpub_data.serialize_derivation_path_for_db()),
-        )
-        result = result.fetchall()
-        last_change_idx = int(result[0][0]) if result[0][0] is not None else 0
-        return last_receiving_idx, last_change_idx
+        returned_indices = []
+        for acc_idx in (0, 1):
+            query = cursor.execute(
+                'SELECT derived_index from xpub_mappings WHERE xpub=? AND '
+                'derivation_path IS ? AND account_index=?;',
+                (xpub_data.xpub.xpub, xpub_data.serialize_derivation_path_for_db(), acc_idx),
+            )
+            prev_index = -1
+            for result in query:
+                index = int(result[0])
+                if index != prev_index + 1:
+                    break
+
+                prev_index = index
+
+            returned_indices.append(0 if prev_index == -1 else prev_index)
+
+        return tuple(returned_indices)  # type: ignore
 
     def get_addresses_to_xpub_mapping(
             self,

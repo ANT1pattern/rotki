@@ -14,8 +14,8 @@ export interface GeneralSettings {
   readonly floatingPrecision: number;
   readonly anonymizedLogs: boolean;
   readonly anonymousUsageAnalytics: boolean;
-  readonly historicDataStart: string;
   readonly ethRpcEndpoint: string;
+  readonly ksmRpcEndpoint: string;
   readonly balanceSaveFrequency: number;
   readonly dateDisplayFormat: string;
   readonly thousandSeparator: string;
@@ -57,7 +57,7 @@ export interface ExchangeInfo {
 
 export type ExchangeData = { [exchange: string]: AssetBalances };
 
-export interface TaxReportEvent {
+export interface ProfitLossPeriod {
   readonly start: number;
   readonly end: number;
 }
@@ -77,8 +77,9 @@ export interface TaskResult<T> {
 
 export const ETH = 'ETH';
 export const BTC = 'BTC';
+export const KSM = 'KSM';
 
-export const SupportedBlockchains = [ETH, BTC] as const;
+export const SupportedBlockchains = [ETH, BTC, KSM] as const;
 
 export type Blockchain = typeof SupportedBlockchains[number];
 
@@ -112,8 +113,8 @@ interface SettingsPayload {
   main_currency: string;
   anonymized_logs: boolean;
   submit_usage_analytics: boolean;
-  historical_data_start: string;
   eth_rpc_endpoint: string;
+  ksm_rpc_endpoint: string;
   ui_floating_precision: number;
   date_display_format: string;
   include_gas_costs: boolean;

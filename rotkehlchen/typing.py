@@ -2,9 +2,10 @@
 from enum import Enum
 from typing import Any, Callable, Dict, List, NamedTuple, NewType, Optional, Tuple, Union
 
-from eth_utils.typing import ChecksumAddress
+from eth_typing import ChecksumAddress
 from typing_extensions import Literal
 
+from rotkehlchen.chain.substrate.typing import KusamaAddress
 from rotkehlchen.fval import FVal
 
 ModuleName = Literal[
@@ -114,8 +115,18 @@ ChecksumEthAddress = ChecksumAddress
 T_BTCAddress = str
 BTCAddress = NewType('BTCAddress', T_BTCAddress)
 
-BlockchainAddress = Union[EthAddress, BTCAddress, ChecksumEthAddress, str]
-ListOfBlockchainAddresses = Union[List[BTCAddress], List[ChecksumEthAddress]]
+BlockchainAddress = Union[
+    EthAddress,
+    BTCAddress,
+    ChecksumEthAddress,
+    KusamaAddress,
+    str,
+]
+ListOfBlockchainAddresses = Union[
+    List[BTCAddress],
+    List[ChecksumEthAddress],
+    List[KusamaAddress],
+]
 
 
 class EthTokenInfo(NamedTuple):
@@ -182,7 +193,7 @@ class EthereumTransaction(NamedTuple):
         return result
 
     def __hash__(self) -> int:
-        return hash(self.tx_hash.hex() + self.from_address + str(self.nonce))
+        return hash(self.identifier)
 
     def __eq__(self, other: Any) -> bool:
         if other is None:
@@ -193,17 +204,24 @@ class EthereumTransaction(NamedTuple):
 
         return hash(self) == hash(other)
 
+    @property
+    def identifier(self) -> str:
+        return '0x' + self.tx_hash.hex() + self.from_address + str(self.nonce)
+
 
 class SupportedBlockchain(Enum):
     """These are the blockchains for which account tracking is supported """
     ETHEREUM = 'ETH'
     BITCOIN = 'BTC'
+    KUSAMA = 'KSM'
 
     def get_address_type(self) -> Callable:
         if self == SupportedBlockchain.ETHEREUM:
             return ChecksumEthAddress
         if self == SupportedBlockchain.BITCOIN:
             return BTCAddress
+        if self == SupportedBlockchain.KUSAMA:
+            return KusamaAddress
         # else
         raise AssertionError('Invalid SupportedBlockchain value')
 

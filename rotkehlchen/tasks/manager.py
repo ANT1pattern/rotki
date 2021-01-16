@@ -1,13 +1,20 @@
 import logging
-from rotkehlchen.greenlets import GreenletManager
-from rotkehlchen.db.dbhandler import DBHandler
-from typing import NamedTuple, Set
+import random
+from collections import defaultdict
+from typing import DefaultDict, List, NamedTuple, Set
+
+import gevent
+
 from rotkehlchen.assets.asset import Asset
-from rotkehlchen.externalapis.cryptocompare import Cryptocompare
-from rotkehlchen.utils.misc import ts_now
-from rotkehlchen.premium.sync import PremiumSyncManager
-from rotkehlchen.chain.manager import ChainManager
 from rotkehlchen.chain.bitcoin.xpub import XpubManager
+from rotkehlchen.chain.manager import ChainManager
+from rotkehlchen.db.dbhandler import DBHandler
+from rotkehlchen.exchanges.manager import ExchangeManager
+from rotkehlchen.externalapis.cryptocompare import Cryptocompare
+from rotkehlchen.greenlets import GreenletManager
+from rotkehlchen.premium.sync import PremiumSyncManager
+from rotkehlchen.typing import ChecksumEthAddress
+from rotkehlchen.utils.misc import ts_now
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +22,17 @@ logger = logging.getLogger(__name__)
 CRYPTOCOMPARE_QUERY_AFTER_SECS = 86400  # a day
 DEFAULT_MAX_TASKS_NUM = 2
 CRYPTOCOMPARE_HISTOHOUR_FREQUENCY = 240  # at least 4 mins apart
+XPUB_DERIVATION_FREQUENCY = 3600  # every hour
+ETH_TX_QUERY_FREQUENCY = 3600  # every hour
+EXCHANGE_QUERY_FREQUENCY = 3600  # every hour
+
+
+def noop_exchange_succes_cb(trades, margin, asset_movements, exchange_specific_data) -> None:  # type: ignore # noqa: E501
+    pass
+
+
+def exchange_fail_cb(error: str) -> None:
+    logger.error(error)
 
 
 class CCHistoQuery(NamedTuple):
@@ -28,19 +46,25 @@ class TaskManager():
             self,
             max_tasks_num: int,
             greenlet_manager: GreenletManager,
+            api_task_greenlets: List[gevent.Greenlet],
             database: DBHandler,
             cryptocompare: Cryptocompare,
             premium_sync_manager: PremiumSyncManager,
             chain_manager: ChainManager,
+            exchange_manager: ExchangeManager,
     ) -> None:
         self.max_tasks_num = max_tasks_num
         self.greenlet_manager = greenlet_manager
+        self.api_task_greenlets = api_task_greenlets
         self.database = database
         self.cryptocompare = cryptocompare
+        self.exchange_manager = exchange_manager
         self.premium_sync_manager = premium_sync_manager
         self.cryptocompare_queries: Set[CCHistoQuery] = set()
         self.chain_manager = chain_manager
-        self.xpub_derivation_scheduled = False
+        self.last_xpub_derivation_ts = 0
+        self.last_eth_tx_query_ts: DefaultDict[ChecksumEthAddress, int] = defaultdict(int)
+        self.last_exchange_query_ts: DefaultDict[str, int] = defaultdict(int)
         self.prepared_cryptocompare_query = False
         self.greenlet_manager.spawn_and_track(  # Needs to run in greenlet, is slow
             after_seconds=None,
@@ -48,6 +72,14 @@ class TaskManager():
             exception_is_error=True,
             method=self._prepare_cryptocompare_queries,
         )
+
+        self.potential_tasks = [
+            self._maybe_schedule_cryptocompare_query,
+            self.premium_sync_manager.maybe_upload_data_to_server,
+            self._maybe_schedule_xpub_derivation,
+            self._maybe_query_ethereum_transactions,
+            self._maybe_schedule_exchange_trade_query,
+        ]
 
     def _prepare_cryptocompare_queries(self) -> None:
         """Prepare the queries to do to cryptocompare
@@ -124,10 +156,84 @@ class TaskManager():
         )
         return True
 
+    def _maybe_schedule_xpub_derivation(self) -> None:
+        """Schedules the xpub derivation task if enough time has passed and if user has xpubs"""
+        now = ts_now()
+        if now - self.last_xpub_derivation_ts <= XPUB_DERIVATION_FREQUENCY:
+            return
+
+        xpubs = self.database.get_bitcoin_xpub_data()
+        if len(xpubs) == 0:
+            return
+
+        self.greenlet_manager.spawn_and_track(
+            after_seconds=None,
+            task_name='Derive new xpub addresses',
+            exception_is_error=True,
+            method=XpubManager(self.chain_manager).check_for_new_xpub_addresses,
+        )
+        self.last_xpub_derivation_ts = now
+
+    def _maybe_query_ethereum_transactions(self) -> None:
+        """Schedules the ethereum transaction query task if enough time has passed"""
+        accounts = self.database.get_blockchain_accounts().eth
+        if len(accounts) == 0:
+            return
+
+        now = ts_now()
+        queriable_accounts = [
+            x for x in accounts if now - self.last_eth_tx_query_ts[x] > ETH_TX_QUERY_FREQUENCY
+        ]
+        if len(queriable_accounts) == 0:
+            return
+
+        address = random.choice(queriable_accounts)
+        task_name = f'Query ethereum transactions for {address}'
+        logger.debug(f'Scheduling task to {task_name}')
+        self.greenlet_manager.spawn_and_track(
+            after_seconds=None,
+            task_name=task_name,
+            exception_is_error=True,
+            method=self.chain_manager.ethereum.transactions.single_address_query_transactions,
+            address=address,
+            start_ts=0,
+            end_ts=now,
+            with_limit=False,
+        )
+        self.last_eth_tx_query_ts[address] = now
+
+    def _maybe_schedule_exchange_trade_query(self) -> None:
+        """Schedules the exchange trades history query task if enough time has passed"""
+        if len(self.exchange_manager.connected_exchanges) == 0:
+            return
+
+        now = ts_now()
+        queriable_exchanges = [
+            exchange for name, exchange in self.exchange_manager.connected_exchanges.items()
+            if now - self.last_exchange_query_ts[name] > EXCHANGE_QUERY_FREQUENCY
+        ]
+        if len(queriable_exchanges) == 0:
+            return
+
+        exchange = random.choice(queriable_exchanges)
+        task_name = f'Query trades of {exchange.name} exchange'
+        logger.debug(f'Scheduling task to {task_name}')
+        self.greenlet_manager.spawn_and_track(
+            after_seconds=None,
+            task_name=task_name,
+            exception_is_error=True,
+            method=exchange.query_history_with_callbacks,
+            start_ts=0,
+            end_ts=now,
+            success_callback=noop_exchange_succes_cb,
+            fail_callback=exchange_fail_cb,
+        )
+        self.last_exchange_query_ts[exchange.name] = now
+
     def schedule(self) -> None:
         """Schedules background tasks"""
         self.greenlet_manager.clear_finished()
-        current_greenlets = len(self.greenlet_manager.greenlets)
+        current_greenlets = len(self.greenlet_manager.greenlets) + len(self.api_task_greenlets)
         not_proceed = current_greenlets >= self.max_tasks_num
         logger.debug(
             f'At task scheduling. Current greenlets: {current_greenlets} '
@@ -137,15 +243,10 @@ class TaskManager():
         if not_proceed:
             return  # too busy
 
-        self._maybe_schedule_cryptocompare_query()
-        self.premium_sync_manager.maybe_upload_data_to_server()
+        callables = random.sample(
+            population=self.potential_tasks,
+            k=min(self.max_tasks_num - current_greenlets, len(self.potential_tasks)),
+        )
 
-        if not self.xpub_derivation_scheduled:
-            # 1 minute in the app's startup try to derive new xpub addresses
-            self.greenlet_manager.spawn_and_track(
-                after_seconds=60.0,
-                task_name='Derive new xpub addresses',
-                exception_is_error=True,
-                method=XpubManager(self.chain_manager).check_for_new_xpub_addresses,
-            )
-            self.xpub_derivation_scheduled = True
+        for callable_fn in callables:
+            callable_fn()  # type: ignore

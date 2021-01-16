@@ -122,6 +122,15 @@ export default class NavigationMenu extends Vue {
           route: '/history/transactions',
           icon: 'mdi-swap-horizontal-bold',
           class: 'eth-transactions'
+        },
+        {
+          type: 'item',
+          text: this.$t(
+            'navigation_menu.history_sub.ledger_actions'
+          ).toString(),
+          route: Routes.HISTORY_LEDGER_ACTIONS,
+          icon: 'mdi-book-open-variant',
+          class: 'ledger'
         }
       ]
     },
@@ -203,9 +212,9 @@ export default class NavigationMenu extends Vue {
     },
     {
       type: 'item',
-      text: this.$tc('navigation_menu.tax_report'),
-      route: '/tax-report',
-      class: 'tax-report',
+      text: this.$tc('navigation_menu.profit_loss_report'),
+      route: Routes.PROFIT_LOSS_REPORT,
+      class: 'profit-loss-report',
       icon: 'mdi-calculator'
     },
     {

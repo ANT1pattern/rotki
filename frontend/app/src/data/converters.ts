@@ -17,7 +17,6 @@ export const convertToGeneralSettings = (
   settings: DBSettings
 ): GeneralSettings => ({
   floatingPrecision: settings.ui_floating_precision,
-  historicDataStart: settings.historical_data_start,
   selectedCurrency: findCurrency(settings.main_currency),
   dateDisplayFormat: settings.date_display_format,
   thousandSeparator: settings.thousand_separator,
@@ -25,6 +24,7 @@ export const convertToGeneralSettings = (
   currencyLocation: settings.currency_location,
   balanceSaveFrequency: settings.balance_save_frequency,
   ethRpcEndpoint: settings.eth_rpc_endpoint,
+  ksmRpcEndpoint: settings.ksm_rpc_endpoint,
   anonymizedLogs: settings.anonymized_logs,
   anonymousUsageAnalytics: settings.submit_usage_analytics,
   krakenAccountType: settings.kraken_account_type,

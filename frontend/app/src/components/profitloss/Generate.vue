@@ -52,14 +52,15 @@ import DateTimePicker from '@/components/dialogs/DateTimePicker.vue';
 import ReportPeriodSelector, {
   PeriodChangedEvent,
   SelectionChangedEvent
-} from '@/components/taxreport/ReportPeriodSelector.vue';
-import { ALL, TAX_REPORT_PERIOD } from '@/store/settings/consts';
+} from '@/components/profitloss/ReportPeriodSelector.vue';
+import { ALL, PROFIT_LOSS_PERIOD } from '@/store/settings/consts';
 import {
   FrontendSettingsPayload,
-  Quarter,
-  TaxReportPeriod
+  ProfitLossTimeframe,
+  Quarter
 } from '@/store/settings/types';
 import { ActionStatus } from '@/store/types';
+import { convertToTimestamp } from '@/utils/date';
 
 @Component({
   components: {
@@ -67,7 +68,7 @@ import { ActionStatus } from '@/store/types';
     DateTimePicker
   },
   computed: {
-    ...mapGetters('settings', [TAX_REPORT_PERIOD])
+    ...mapGetters('settings', [PROFIT_LOSS_PERIOD])
   },
   methods: {
     ...mapActions('settings', ['updateSetting'])
@@ -82,7 +83,7 @@ export default class Generate extends Vue {
   year: string = new Date().getFullYear().toString();
   quarter: Quarter = ALL;
 
-  [TAX_REPORT_PERIOD]!: TaxReportPeriod;
+  [PROFIT_LOSS_PERIOD]!: ProfitLossTimeframe;
   updateSetting!: (payload: FrontendSettingsPayload) => Promise<ActionStatus>;
 
   startRules: ((v: string) => boolean | string)[] = [
@@ -96,20 +97,8 @@ export default class Generate extends Vue {
   ];
 
   mounted() {
-    this.year = this.taxReportPeriod.year;
-    this.quarter = this.taxReportPeriod.quarter;
-  }
-
-  private convertToTimestamp(date: string): number {
-    let format: string = 'DD/MM/YYYY';
-    if (date.indexOf(' ') > -1) {
-      format += ' HH:mm';
-      if (date.charAt(date.length - 6) === ':') {
-        format += ':ss';
-      }
-    }
-
-    return moment(date, format).unix();
+    this.year = this[PROFIT_LOSS_PERIOD].year;
+    this.quarter = this[PROFIT_LOSS_PERIOD].quarter;
   }
 
   get custom(): boolean {
@@ -124,7 +113,7 @@ export default class Generate extends Vue {
     }
 
     this.start = period.start;
-    if (this.convertToTimestamp(period.end) > moment().unix()) {
+    if (convertToTimestamp(period.end) > moment().unix()) {
       this.end = moment().format('DD/MM/YYYY HH:mm:ss');
     } else {
       this.end = period.end;
@@ -141,7 +130,7 @@ export default class Generate extends Vue {
     }
 
     this.updateSetting({
-      taxReportPeriod: event
+      profitLossReportPeriod: event
     });
   }
 
@@ -150,7 +139,7 @@ export default class Generate extends Vue {
     this.invalidRange =
       !!this.start &&
       !!this.end &&
-      this.convertToTimestamp(this.start) > this.convertToTimestamp(this.end);
+      convertToTimestamp(this.start) > convertToTimestamp(this.end);
     this.message = this.$t('generate.validation.end_after_start').toString();
   }
 
@@ -159,13 +148,13 @@ export default class Generate extends Vue {
     this.invalidRange =
       !!this.start &&
       !!this.end &&
-      this.convertToTimestamp(this.start) > this.convertToTimestamp(this.end);
+      convertToTimestamp(this.start) > convertToTimestamp(this.end);
     this.message = this.$t('generate.validation.end_after_start').toString();
   }
 
   generate() {
-    const start = this.convertToTimestamp(this.start);
-    const end = this.convertToTimestamp(this.end);
+    const start = convertToTimestamp(this.start);
+    const end = convertToTimestamp(this.end);
     this.$emit('generate', {
       start,
       end

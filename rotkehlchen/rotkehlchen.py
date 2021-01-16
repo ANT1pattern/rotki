@@ -20,9 +20,11 @@ from rotkehlchen.chain.ethereum.manager import (
     EthereumManager,
     NodeName,
 )
-from rotkehlchen.tasks.manager import TaskManager, DEFAULT_MAX_TASKS_NUM
 from rotkehlchen.chain.ethereum.trades import AMMTrade
 from rotkehlchen.chain.manager import BlockchainBalancesUpdate, ChainManager
+from rotkehlchen.chain.substrate.manager import SubstrateManager
+from rotkehlchen.chain.substrate.typing import SubstrateChain
+from rotkehlchen.chain.substrate.utils import KUSAMA_NODES_TO_CONNECT_AT_START
 from rotkehlchen.config import default_data_directory
 from rotkehlchen.constants.misc import ZERO
 from rotkehlchen.data.importer import DataImporter
@@ -45,6 +47,7 @@ from rotkehlchen.externalapis.etherscan import Etherscan
 from rotkehlchen.fval import FVal
 from rotkehlchen.greenlets import GreenletManager
 from rotkehlchen.history import PriceHistorian, TradesHistorian
+from rotkehlchen.history.trades import FREE_LEDGER_ACTIONS_LIMIT
 from rotkehlchen.icons import IconManager
 from rotkehlchen.inquirer import Inquirer
 from rotkehlchen.logging import (
@@ -56,6 +59,7 @@ from rotkehlchen.logging import (
 from rotkehlchen.premium.premium import Premium, PremiumCredentials, premium_create_and_verify
 from rotkehlchen.premium.sync import PremiumSyncManager
 from rotkehlchen.serialization.deserialize import deserialize_location
+from rotkehlchen.tasks.manager import DEFAULT_MAX_TASKS_NUM, TaskManager
 from rotkehlchen.typing import (
     ApiKey,
     ApiSecret,
@@ -78,9 +82,11 @@ log = RotkehlchenLogsAdapter(logger)
 MAIN_LOOP_SECS_DELAY = 10
 FREE_TRADES_LIMIT = 250
 FREE_ASSET_MOVEMENTS_LIMIT = 100
+
 LIMITS_MAPPING = {
     'trade': FREE_TRADES_LIMIT,
     'asset_movement': FREE_ASSET_MOVEMENTS_LIMIT,
+    'ledger_action': FREE_LEDGER_ACTIONS_LIMIT,
 }
 
 ICONS_BATCH_SIZE = 5
@@ -119,6 +125,7 @@ class Rotkehlchen():
             )
         self.main_loop_spawned = False
         self.args = args
+        self.api_task_greenlets: List[gevent.Greenlet] = []
         self.msg_aggregator = MessagesAggregator()
         self.greenlet_manager = GreenletManager(msg_aggregator=self.msg_aggregator)
         self.exchange_manager = ExchangeManager(msg_aggregator=self.msg_aggregator)
@@ -258,10 +265,20 @@ class Rotkehlchen():
             greenlet_manager=self.greenlet_manager,
             connect_at_start=ETHEREUM_NODES_TO_CONNECT_AT_START,
         )
+        kusama_manager = SubstrateManager(
+            chain=SubstrateChain.KUSAMA,
+            msg_aggregator=self.msg_aggregator,
+            greenlet_manager=self.greenlet_manager,
+            connect_at_start=KUSAMA_NODES_TO_CONNECT_AT_START,
+            connect_on_startup=self._connect_ksm_manager_on_startup(),
+            own_rpc_endpoint=settings.ksm_rpc_endpoint,
+        )
+
         Inquirer().inject_ethereum(ethereum_manager)
         self.chain_manager = ChainManager(
             blockchain_accounts=self.data.db.get_blockchain_accounts(),
             ethereum_manager=ethereum_manager,
+            kusama_manager=kusama_manager,
             msg_aggregator=self.msg_aggregator,
             database=self.data.db,
             greenlet_manager=self.greenlet_manager,
@@ -281,10 +298,12 @@ class Rotkehlchen():
         self.task_manager = TaskManager(
             max_tasks_num=DEFAULT_MAX_TASKS_NUM,
             greenlet_manager=self.greenlet_manager,
+            api_task_greenlets=self.api_task_greenlets,
             database=self.data.db,
             cryptocompare=self.cryptocompare,
             premium_sync_manager=self.premium_sync_manager,
             chain_manager=self.chain_manager,
+            exchange_manager=self.exchange_manager,
         )
         self.user_is_logged_in = True
         log.debug('User unlocking complete')
@@ -500,6 +519,7 @@ class Rotkehlchen():
             start_ts: Timestamp,
             end_ts: Timestamp,
     ) -> Tuple[Dict[str, Any], str]:
+        self.accountant.reset_processing_timestamps()
         (
             error_or_empty,
             history,
@@ -507,6 +527,7 @@ class Rotkehlchen():
             asset_movements,
             eth_transactions,
             defi_events,
+            ledger_actions,
         ) = self.trades_historian.get_history(
             start_ts=start_ts,
             end_ts=end_ts,
@@ -520,6 +541,7 @@ class Rotkehlchen():
             asset_movements=asset_movements,
             eth_transactions=eth_transactions,
             defi_events=defi_events,
+            ledger_actions=ledger_actions,
         )
         return result, error_or_empty
 
@@ -713,6 +735,7 @@ class Rotkehlchen():
             balances['blockchain'] = serialized_chain_result['assets']
         except (RemoteError, EthSyncError) as e:
             problem_free = False
+            serialized_chain_result = {'liabilities': {}}
             log.error(f'Querying blockchain balances failed due to: {str(e)}')
 
         balances = account_for_manually_tracked_balances(db=self.data.db, balances=balances)
@@ -891,6 +914,11 @@ class Rotkehlchen():
                 if not result:
                     return False, msg
 
+            if settings.ksm_rpc_endpoint is not None:
+                result, msg = self.chain_manager.set_ksm_rpc_endpoint(settings.ksm_rpc_endpoint)
+                if not result:
+                    return False, msg
+
             if settings.kraken_account_type is not None:
                 kraken = self.exchange_manager.get('kraken')
                 if kraken:
@@ -957,3 +985,6 @@ class Rotkehlchen():
     def shutdown(self) -> None:
         self.logout()
         self.shutdown_event.set()
+
+    def _connect_ksm_manager_on_startup(self) -> bool:
+        return bool(self.data.db.get_blockchain_accounts().ksm)

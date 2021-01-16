@@ -21,6 +21,7 @@ from rotkehlchen.tests.utils.database import (
 from rotkehlchen.tests.utils.ethereum import wait_until_all_nodes_connected
 from rotkehlchen.tests.utils.factories import make_random_b64bytes
 from rotkehlchen.tests.utils.history import maybe_mock_historical_price_queries
+from rotkehlchen.tests.utils.substrate import wait_until_all_substrate_nodes_connected
 
 
 @pytest.fixture(name='max_tasks_num')
@@ -94,7 +95,9 @@ def initialize_mock_rotkehlchen_instance(
         manually_tracked_balances,
         default_mock_price_value,
         ethereum_manager_connect_at_start,
+        kusama_manager_connect_at_start,
         eth_rpc_endpoint,
+        ksm_rpc_endpoint,
         aave_use_graph,
         max_tasks_num,
 ):
@@ -103,18 +106,31 @@ def initialize_mock_rotkehlchen_instance(
 
     # Mock the initial get settings to include the specified ethereum modules
     def mock_get_settings() -> DBSettings:
-        settings = DBSettings(active_modules=ethereum_modules, eth_rpc_endpoint=eth_rpc_endpoint)
+        settings = DBSettings(
+            active_modules=ethereum_modules,
+            eth_rpc_endpoint=eth_rpc_endpoint,
+            ksm_rpc_endpoint=ksm_rpc_endpoint,
+        )
         return settings
     settings_patch = patch.object(rotki, 'get_settings', side_effect=mock_get_settings)
 
     # Do not connect to the usual nodes at start by default. Do not want to spam
     # them during our tests. It's configurable per test, with the default being nothing
-    rpcconnect_patch = patch(
+    eth_rpcconnect_patch = patch(
         'rotkehlchen.rotkehlchen.ETHEREUM_NODES_TO_CONNECT_AT_START',
         new=ethereum_manager_connect_at_start,
     )
+    ksm_rpcconnect_patch = patch(
+        'rotkehlchen.rotkehlchen.KUSAMA_NODES_TO_CONNECT_AT_START',
+        new=kusama_manager_connect_at_start,
+    )
+    ksm_connect_on_startup_patch = patch.object(
+        rotki,
+        '_connect_ksm_manager_on_startup',
+        return_value=bool(blockchain_accounts.ksm),
+    )
 
-    with settings_patch, rpcconnect_patch:
+    with settings_patch, eth_rpcconnect_patch, ksm_rpcconnect_patch, ksm_connect_on_startup_patch:
         rotki.unlock_user(
             user=username,
             password=db_password,
@@ -147,6 +163,10 @@ def initialize_mock_rotkehlchen_instance(
     wait_until_all_nodes_connected(
         ethereum_manager_connect_at_start=ethereum_manager_connect_at_start,
         ethereum=rotki.chain_manager.ethereum,
+    )
+    wait_until_all_substrate_nodes_connected(
+        substrate_manager_connect_at_start=kusama_manager_connect_at_start,
+        substrate_manager=rotki.chain_manager.kusama,
     )
 
     aave = rotki.chain_manager.aave
@@ -196,7 +216,9 @@ def fixture_rotkehlchen_api_server(
         manually_tracked_balances,
         default_mock_price_value,
         ethereum_manager_connect_at_start,
+        kusama_manager_connect_at_start,
         ethrpc_endpoint,
+        ksm_rpc_endpoint,
         aave_use_graph,
         max_tasks_num,
 ):
@@ -223,7 +245,9 @@ def fixture_rotkehlchen_api_server(
         manually_tracked_balances=manually_tracked_balances,
         default_mock_price_value=default_mock_price_value,
         ethereum_manager_connect_at_start=ethereum_manager_connect_at_start,
+        kusama_manager_connect_at_start=kusama_manager_connect_at_start,
         eth_rpc_endpoint=ethrpc_endpoint,
+        ksm_rpc_endpoint=ksm_rpc_endpoint,
         aave_use_graph=aave_use_graph,
         max_tasks_num=max_tasks_num,
     )
@@ -251,7 +275,9 @@ def rotkehlchen_instance(
         manually_tracked_balances,
         default_mock_price_value,
         ethereum_manager_connect_at_start,
+        kusama_manager_connect_at_start,
         ethrpc_endpoint,
+        ksm_rpc_endpoint,
         aave_use_graph,
         max_tasks_num,
 ):
@@ -276,7 +302,9 @@ def rotkehlchen_instance(
         manually_tracked_balances=manually_tracked_balances,
         default_mock_price_value=default_mock_price_value,
         ethereum_manager_connect_at_start=ethereum_manager_connect_at_start,
+        kusama_manager_connect_at_start=kusama_manager_connect_at_start,
         eth_rpc_endpoint=ethrpc_endpoint,
+        ksm_rpc_endpoint=ksm_rpc_endpoint,
         aave_use_graph=aave_use_graph,
         max_tasks_num=max_tasks_num,
     )

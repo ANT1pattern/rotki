@@ -1,4 +1,14 @@
 {
+  "account_settings_display": {
+    "account_asset_movement": "Account asset movement fees were taken into account:",
+    "crypto2crypto": "Crypto to crypto trades were taken into account:",
+    "gas_costs": "Gas costs where taken into account:",
+    "past_cost_basis": "Past cost basis was calculated during the report creation:",
+    "tax_free_period": "There was a tax free period:",
+    "title": "Accounting Settings",
+    "subtitle": "These accounting setting were used during the report creation",
+    "days": "{days} days"
+  },
   "adex_page": {
     "loading": "Please wait while your AdEx staking details are getting loaded..."
   },
@@ -267,6 +277,97 @@
       "end_after_start": "The end time should be after the start time."
     }
   },
+  "ignore_buttons": {
+    "ignore": "Ignore",
+    "ignore_tooltip": "Ignored the selected actions in the profit/loss report",
+    "unignore": "Unignore",
+    "unignore_tooltip": "Included the selected actions in the profit/loss report"
+  },
+  "ledger_action_form": {
+    "asset":  {
+      "validation": {
+        "non_empty": "The asset field cannot be empty"
+      }
+    },
+    "amount": {
+      "label": "Amount",
+      "validation": {
+        "non_empty": "The amount field cannot be empty."
+      }
+    },
+    "date": {
+      "hint": "The date of when the action happened",
+      "label": "Date"
+    },
+    "link": {
+      "label": "Link"
+    },
+    "location": {
+      "label": "Location",
+      "validation": {
+        "non_empty": "The location field cannot be empty."
+      }
+    },
+    "notes": {
+      "label": "Notes"
+    },
+    "type": {
+      "label": "Type"
+    }
+  },
+  "ledger_actions": {
+    "actions": {
+      "dividends": "Dividends Income",
+      "donation": "Donation Received",
+      "expense": "Expense",
+      "income": "Income",
+      "loss": "Loss"
+    },
+    "delete": {
+      "message": "Are you sure wou want to delete this ledger action?",
+      "title": "Delete LedgerAction"
+    },
+    "delete_failure": {
+      "description":"There was an error while deleting the action: {error}",
+      "title": "Delete Failed"
+    },
+    "details": {
+      "link": "Link",
+      "link_data": "No link found.",
+      "note_data": "No notes found.",
+      "notes": "Notes",
+      "title": "Details"
+    },
+    "dialog": {
+      "save": "Save",
+      "add": {
+        "title": "Add a ledger action",
+        "subtitle": "Add a manual entry of income/loss/expense etc."
+      }
+    },
+    "edit_tooltip": "Edit the ledger action",
+    "delete_tooltip": "Delete the ledger action",
+    "headers": {
+      "actions": "Actions",
+      "amount": "Amount",
+      "asset": "Asset",
+      "date": "Date",
+      "location": "Location",
+      "ignored": "Ignored",
+      "type": "Type"
+    },
+    "label": "ledger actions",
+    "loading": "Please wait while your ledger actions are getting loaded...",
+    "loading_subtitle": "The loading of ledger actions might take a while depending on the number of actions you performed.",
+    "refresh_tooltip": "Refresh your ledger actions",
+    "title": "Ledger Actions",
+    "ignore": {
+      "no_actions": {
+        "description": "All the selected actions are already ignored | All the selected actions are already included",
+        "title": "No actions to ignore | No actions to unignore"
+      }
+    }
+  },
   "loan_liquidation": {
     "liquidated_collateral": "Liquidated collateral",
     "liquidation_events": "Liquidation Events",
@@ -368,7 +469,7 @@
     "subtitle": "Create new tags or modify existing",
     "title": "Tag Manager"
   },
-  "tax_report_events": {
+  "profit_loss_events": {
     "headers": {
       "location": "Location",
       "paid_asset": "Paid Asset",
@@ -385,10 +486,23 @@
     },
     "title": "Events"
   },
-  "tax_report_overview": {
+  "profit_loss_overview": {
     "columns": {
       "result": "Result",
       "value": "{symbol} value"
+    },
+    "rows": {
+      "asset_movement_fees": "Asset Movement Fees",
+      "defi_profit_loss": "DeFi Profit/Loss",
+      "ethereum_transaction_gas_costs": "Ethereum Transaction Gas Costs",
+      "general_trade_profit_loss": "General Trade Profit/Loss",
+      "ledger_actions_profit_loss": "Ledger Actions Profit/Loss",
+      "loan_profit": "Loan Profit",
+      "margin_positions_pnl": "Margin Positions Profit/Loss",
+      "settlement_losses": "Settlement Losses",
+      "taxable_trade_profit_loss": "Taxable Trade Profit/Loss",
+      "total_profit_loss": "Total Profit/Loss",
+      "total_taxable_profit_loss": "Total Taxable Profit/Loss"
     },
     "title": "Overview"
   },
@@ -421,15 +535,17 @@
       },
       "title": "Frontend-only Settings"
     },
-    "historic_start_hint": "DD/MM/YYYY format",
     "labels": {
       "anonymized_logs": "Should logs be anonymized?",
       "anonymous_analytics": "Should anonymous usage analytics be submitted?",
       "balance_saving_frequency": "Balance data saving frequency in hours",
       "btc_derivation_gap": "BTC derivation gap limit",
       "date_display_format": "Date display format",
-      "historical_data_start": "Date from when to count historical data",
-      "rpc_endpoint": "Eth RPC Endpoint"
+      "rpc_endpoint": "Ethereum Node RPC Endpoint",
+      "ksm_rpc_endpoint": "Kusama Node RPC Endpoint"
+    },
+    "local_nodes": {
+      "title": "Local Nodes"
     },
     "title": "General Settings",
     "validation": {
@@ -463,14 +579,15 @@
         "error": "Floating precision set to {precision}",
         "success":"Error setting floating precision to {precision}"
       },
-      "historic_data": {
-        "error": "Error setting historical data start to {date}",
-        "success": "Historical data start set to {date}"
-      },
       "rpc": {
-        "success_set": "RPC endpoint set to {endpoint}",
-        "success_unset": "RPC endpoint was successfully unset",
-        "error": "Error setting rpc endpoint"
+        "success_set": "The Ethereum node RPC endpoint was set to {endpoint}",
+        "success_unset": "The Ethereum node RPC endpoint was successfully unset",
+        "error": "There was an error while setting the Ethereum node RPC endpoint"
+      },
+      "ksm_rpc": {
+        "success_set": "The Kusama node RPC endpoint was set to {endpoint}",
+        "success_unset": "The Kusama node RPC endpoint was successfully unset",
+        "error": "There was an error setting the Kusama node RPC endpoint"
       },
       "scramble": {
         "error": "Error setting scramble mode: {message}"
@@ -500,6 +617,17 @@
     }
   },
   "login": {
+    "custom_backend": {
+      "session_only": "Save only for this session",
+      "tooltip": "Connect to a different rotki backend",
+      "label": "Backend URL",
+      "hint": "The url the backend you would like to connect (leave empty for default).",
+      "placeholder": "http://localhost:4242",
+      "validation": {
+        "non_empty": "The custom backend url cannot be empty",
+        "url": "The entry inserted is not in a valid url format"
+      }
+    },
     "remember_me": "Remember User",
     "title": "Sign In",
     "label_username": "Username",
@@ -557,7 +685,14 @@
       "rate": "Rate",
       "amount": "Amount",
       "fee": "Fee",
-      "timestamp": "Date"
+      "timestamp": "Date",
+      "ignored": "Ignored"
+    },
+    "ignore": {
+      "no_actions": {
+        "description": "All the selected actions are already ignored | All the selected actions are already included",
+        "title": "No actions to ignore | No actions to unignore"
+      }
     },
     "details": {
       "title": "Trade Details",
@@ -587,6 +722,13 @@
     "refresh_tooltip": "Refresh {name} balances",
     "title": "{name} balances"
   },
+  "trade_location": {
+    "banks": "Banks",
+    "commodities": "Commodities",
+    "equities": "Equities",
+    "external": "External",
+    "real_estate": "Real Estate"
+  },
   "trade_location_selector": {
     "selection-none": "Showing results across all locations",
     "selection-single": "Showing results for {location}",
@@ -600,7 +742,8 @@
       "asset": "Asset",
       "amount": "Amount",
       "fee": "Fee",
-      "timestamp": "Date"
+      "timestamp": "Date",
+      "ignored": "Ignored"
     },
     "label": "asset movements",
     "loading": "Please wait while your asset movements are getting loaded...",
@@ -609,14 +752,21 @@
       "title": "Details",
       "no_details": "No details found."
     },
-    "loading_subtitle": "The loading of asset movements might take a while depending on the amount of exchanges, and actions you performed on these exchanges."
+    "loading_subtitle": "The loading of asset movements might take a while depending on the amount of exchanges, and actions you performed on these exchanges.",
+    "ignore": {
+      "no_actions": {
+        "description": "All the selected actions are already ignored | All the selected actions are already included",
+        "title": "No actions to ignore | No actions to unignore"
+      }
+    }
   },
   "history": {
     "header": "History",
     "tabs": {
       "trades": "Trades",
       "deposits_withdrawals": "Deposits & Withdrawals",
-      "transactions": "Ethereum Transactions"
+      "transactions": "Ethereum Transactions",
+      "ledger_actions": "Ledger Actions"
     }
   },
   "overview": {
@@ -699,6 +849,22 @@
     }
   },
   "actions": {
+    "ledger_actions": {
+      "error": {
+        "description": "Failed query for ledger actions: {error}",
+        "title": "Ledger actions"
+      },
+      "task": {
+        "description": "actions.ledger_actions.task.description",
+        "title": "Retrieving ledger actions"
+      }
+    },
+    "ignore": {
+      "error": {
+        "description": "Failed to ignore the selected actions: {error}",
+        "title": "Ignoring actions failed"
+      }
+    },
     "manual_balances": {
       "task": {
         "title": "Retrieving manual balances"
@@ -1148,6 +1314,12 @@
           "description": "Failed to query the Eth2 staking deposits: {error}"
         }
       }
+    },
+    "unignore": {
+      "error": {
+        "title": "Unignoring actions failed",
+        "description": "Failed to unignore the selected actions: {error}"
+      }
     }
   },
   "navigation_menu": {
@@ -1159,11 +1331,12 @@
     "history_sub": {
       "trades": "Trades",
       "deposits_withdrawals": "Deposits & Withdrawals",
-      "ethereum_transactions": "Ethereum Transactions"
+      "ethereum_transactions": "Ethereum Transactions",
+      "ledger_actions": "Ledger Actions"
     },
     "defi": "DeFi",
     "statistics": "Statistics",
-    "tax_report": "Tax Report",
+    "profit_loss_report": "Profit and Loss Report",
     "defi_sub": {
       "overview": "Overview",
       "deposits": "Deposits",
@@ -1186,6 +1359,12 @@
     "transaction": "TX:"
   },
   "transactions": {
+    "ignore": {
+      "no_actions": {
+        "description": "All the selected actions are already ignored | All the selected actions are already included",
+        "title": "No actions to ignore | No actions to unignore"
+      }
+    },
     "loading": "Please wait while your transactions are getting loaded...",
     "loading_subtitle": "The loading of transactions might take a while depending on the number of actions you performed.",
     "title": "Ethereum Transactions",
@@ -1197,7 +1376,8 @@
       "from_address": "From",
       "to_address": "To",
       "value": "Value",
-      "gas_fee": "Fee"
+      "gas_fee": "Fee",
+      "ignored_in_accounting": "Ignored"
     },
     "label": "transactions"
   },
@@ -1342,7 +1522,7 @@
       "addresses_hint": "Insert multiple comma separated addresses",
       "blockchain": "Choose blockchain",
       "account": "Account",
-      "label": "Label",
+      "label": "Name",
       "btc": {
         "xpub": "XPUB",
         "derivation_path": "Derivation Path",
@@ -1361,7 +1541,7 @@
     "advanced_tooltip": "Display the advanced xpub options | Hide the advanced xpub options"
   },
   "blockchain_balances": {
-    "title": "Blockchain Balances",
+    "title": "Blockchain Balances (per asset)",
     "form_dialog": {
       "save": "Save",
       "cancel": "Cancel",
@@ -1373,8 +1553,9 @@
       "title": "Blockchain Balances per Asset"
     },
     "balances": {
-      "eth": "ETH per account balances",
-      "btc": "BTC per account balances"
+      "eth": "Ethereum balances",
+      "btc": "Bitcoin balances",
+      "ksm": "Kusama balances"
     },
     "metamask_import": {
       "error": {
@@ -1561,16 +1742,17 @@
     "no_premium": "@:common.no_premium Statistics are @:common.available_to_premium",
     "get_premium": "@:common.visit_website"
   },
-  "tax_report": {
+  "profit_loss_report": {
     "download_csv": "Download CSV",
     "download_failed": "Download of report is not possible",
     "settings_tooltip": "Open the accounting settings",
-    "title": "Tax Report",
+    "title": "Profit and Loss Report",
     "export_csv": "Export CSV",
     "loading_message": "Please wait while your report is generated...",
     "loading_hint": "Your report generation might take a while depending on the amount of trades and actions you performed during the selected period.",
     "select_directory": "Select a directory",
-    "csv_export_error": "There was an error with Export"
+    "csv_export_error": "There was an error with Export",
+    "report_period": "Report starting from {start} to {end}"
   },
   "import_data": {
     "cointracking": {
@@ -1690,6 +1872,14 @@
   "connection_loading": {
     "message": "Connecting to rotki backend"
   },
+  "account_management": {
+    "custom_backend": {
+      "failed":  {
+        "title": "Could not connect to custom backend",
+        "description": "Connection to {url} failed after 5 attempts"
+      }
+    }
+  },
   "privacy_notice": {
     "title": "rotki is a local application that respects your privacy.",
     "message": "rotki accounts are encrypted using your password and saved in your local filesystem."
@@ -1700,7 +1890,8 @@
   },
   "blockchains": {
     "eth": "Ethereum",
-    "btc": "Bitcoin"
+    "btc": "Bitcoin",
+    "ksm": "Kusama"
   },
   "sync_buttons": {
     "upload_tooltip": "Push your local database to the server and replace all data there",

@@ -16,8 +16,12 @@ from gevent.lock import Semaphore
 from typing_extensions import Literal
 from werkzeug.datastructures import FileStorage
 
-from rotkehlchen.constants.misc import ZERO
-from rotkehlchen.accounting.structures import BalanceType
+from rotkehlchen.accounting.structures import (
+    ActionType,
+    BalanceType,
+    LedgerAction,
+    LedgerActionType,
+)
 from rotkehlchen.api.v1.encoding import TradeSchema
 from rotkehlchen.assets.asset import Asset
 from rotkehlchen.assets.resolver import AssetResolver
@@ -29,10 +33,12 @@ from rotkehlchen.balances.manual import (
     remove_manually_tracked_balances,
 )
 from rotkehlchen.chain.bitcoin.xpub import XpubManager
-from rotkehlchen.chain.ethereum.trades import AMMTrade, AMMTradeLocations
 from rotkehlchen.chain.ethereum.airdrops import check_airdrops
+from rotkehlchen.chain.ethereum.trades import AMMTrade, AMMTradeLocations
 from rotkehlchen.chain.ethereum.transactions import FREE_ETH_TX_LIMIT
 from rotkehlchen.constants.assets import A_BTC, A_ETH
+from rotkehlchen.constants.misc import ZERO
+from rotkehlchen.db.ledger_actions import DBLedgerActions
 from rotkehlchen.db.queried_addresses import QueriedAddresses
 from rotkehlchen.db.settings import ModifiableDBSettings
 from rotkehlchen.db.utils import AssetBalance, LocationData
@@ -53,6 +59,7 @@ from rotkehlchen.errors import (
 from rotkehlchen.exchanges.data_structures import Trade
 from rotkehlchen.exchanges.manager import SUPPORTED_EXCHANGES
 from rotkehlchen.fval import FVal
+from rotkehlchen.history.trades import FREE_LEDGER_ACTIONS_LIMIT
 from rotkehlchen.inquirer import Inquirer
 from rotkehlchen.logging import RotkehlchenLogsAdapter
 from rotkehlchen.premium.premium import PremiumCredentials
@@ -187,10 +194,8 @@ class RestAPI():
         self.stop_event = Event()
         mainloop_greenlet = self.rotkehlchen.start()
         mainloop_greenlet.link_exception(self._handle_killed_greenlets)
-        # Greenlets that will be waited for when we shutdown
+        # Greenlets that will be waited for when we shutdown (just main loop)
         self.waited_greenlets = [mainloop_greenlet]
-        # Greenlets that can be killed instead of waited for when we shutdown
-        self.killable_greenlets: List[gevent.Greenlet] = []
         self.task_lock = Semaphore()
         self.task_id = 0
         self.task_results: Dict[int, Any] = {}
@@ -253,7 +258,7 @@ class RestAPI():
         )
         greenlet.task_id = task_id
         greenlet.link_exception(self._handle_killed_greenlets)
-        self.killable_greenlets.append(greenlet)
+        self.rotkehlchen.api_task_greenlets.append(greenlet)
         return api_response(_wrap_in_ok_result({'task_id': task_id}), status_code=HTTPStatus.OK)
 
     # - Public functions not exposed via the rest api
@@ -262,7 +267,7 @@ class RestAPI():
         log.debug('Waiting for greenlets')
         gevent.wait(self.waited_greenlets)
         log.debug('Waited for greenlets. Killing all other greenlets')
-        gevent.killall(self.killable_greenlets)
+        gevent.killall(self.rotkehlchen.api_task_greenlets)
         log.debug('Greenlets killed. Killing zerorpc greenlet')
         log.debug('Shutdown completed')
         logging.shutdown()
@@ -291,7 +296,7 @@ class RestAPI():
             # If no task id is given return list of all pending and completed tasks
             completed = []
             pending = []
-            for greenlet in self.killable_greenlets:
+            for greenlet in self.rotkehlchen.api_task_greenlets:
                 task_id = greenlet.task_id
                 if task_id in self.task_results:
                     completed.append(task_id)
@@ -302,7 +307,7 @@ class RestAPI():
             return api_response(result=result, status_code=HTTPStatus.OK)
 
         with self.task_lock:
-            for idx, greenlet in enumerate(self.killable_greenlets):
+            for idx, greenlet in enumerate(self.rotkehlchen.api_task_greenlets):
                 if greenlet.task_id == task_id:
                     if task_id in self.task_results:
                         # Task has completed and we just got the outcome
@@ -316,8 +321,8 @@ class RestAPI():
                             'result': {'status': 'completed', 'outcome': process_result(ret)},
                             'message': '',
                         }
-                        # Also remove the greenlet from the killable_greenlets
-                        self.killable_greenlets.pop(idx)
+                        # Also remove the greenlet from the api tasks
+                        self.rotkehlchen.api_task_greenlets.pop(idx)
                         return api_response(result=result_dict, status_code=HTTPStatus.OK)
                     # else task is still pending and the greenlet is running
                     result_dict = {
@@ -533,16 +538,25 @@ class RestAPI():
         else:
             result = balances.serialize()
             # If only specific input blockchain was given ignore other results
+            totals: Dict[str, Any] = {'assets': {}, 'liabilities': {}}
             if blockchain == SupportedBlockchain.ETHEREUM:
                 result['per_account'].pop('BTC', None)
+                result['per_account'].pop('KSM', None)
                 result['totals']['assets'].pop('BTC', None)
+                result['totals']['assets'].pop('KSM', None)
             elif blockchain == SupportedBlockchain.BITCOIN:
                 val = result['per_account'].get('BTC', None)
                 per_account = {'BTC': val} if val else {}
                 val = result['totals']['assets'].get('BTC', None)
-                totals: Dict[str, Any] = {'assets': {}, 'liabilities': {}}
                 if val:
                     totals['assets'] = {'BTC': val}
+                result = {'per_account': per_account, 'totals': totals}
+            elif blockchain == SupportedBlockchain.KUSAMA:
+                val = result['per_account'].get('KSM', None)
+                per_account = {'KSM': val} if val else {}
+                val = result['totals']['assets'].get('KSM', None)
+                if val:
+                    totals['assets'] = {'KSM': val}
                 result = {'per_account': per_account, 'totals': totals}
 
         return {'result': result, 'message': msg, 'status_code': status_code}
@@ -594,8 +608,16 @@ class RestAPI():
         else:
             entry_table = 'trades'
 
+        mapping = self.rotkehlchen.data.db.get_ignored_action_ids(ActionType.TRADE)
+        ignored_ids = mapping.get(ActionType.TRADE, [])
+        entries_result = []
+        for entry in trades_result:
+            entries_result.append(
+                {'entry': entry, 'ignored_in_accounting': entry['trade_id'] in ignored_ids},
+            )
+
         result = {
-            'entries': trades_result,
+            'entries': entries_result,
             'entries_found': self.rotkehlchen.data.db.get_entries_count(entry_table),
             'entries_limit': FREE_TRADES_LIMIT if self.rotkehlchen.premium is None else -1,
         }
@@ -722,10 +744,20 @@ class RestAPI():
         except RemoteError as e:
             return {'result': None, 'message': str(e), 'status_code': HTTPStatus.BAD_GATEWAY}
 
-        serialized_movements = [x.serialize() for x in movements]
+        serialized_movements = process_result_list([x.serialize() for x in movements])
         limit = FREE_ASSET_MOVEMENTS_LIMIT if self.rotkehlchen.premium is None else -1
+
+        mapping = self.rotkehlchen.data.db.get_ignored_action_ids(ActionType.ASSET_MOVEMENT)
+        ignored_ids = mapping.get(ActionType.ASSET_MOVEMENT, [])
+        entries_result = []
+        for entry in serialized_movements:
+            entries_result.append({
+                'entry': entry,
+                'ignored_in_accounting': entry['identifier'] in ignored_ids,
+            })
+
         result = {
-            'entries': process_result_list(serialized_movements),
+            'entries': entries_result,
             'entries_found': self.rotkehlchen.data.db.get_entries_count('asset_movements'),
             'entries_limit': limit,
         }
@@ -755,6 +787,116 @@ class RestAPI():
         )
         result_dict = {'result': response['result'], 'message': response['message']}
         return api_response(process_result(result_dict), status_code=response['status_code'])
+
+    def _get_ledger_actions(
+            self,
+            from_ts: Optional[Timestamp],
+            to_ts: Optional[Timestamp],
+            location: Optional[Location],
+    ) -> Dict[str, Any]:
+        actions, original_length = self.rotkehlchen.trades_historian.query_ledger_actions(
+            has_premium=self.rotkehlchen.premium is not None,
+            from_ts=from_ts,
+            to_ts=to_ts,
+            location=location,
+        )
+
+        mapping = self.rotkehlchen.data.db.get_ignored_action_ids(ActionType.LEDGER_ACTION)
+        ignored_ids = mapping.get(ActionType.LEDGER_ACTION, [])
+        entries_result = []
+        for action in actions:
+            entries_result.append({
+                'entry': action.serialize(),
+                'ignored_in_accounting': str(action.identifier) in ignored_ids,
+            })
+
+        result = {
+            'entries': entries_result,
+            'entries_found': original_length,
+            'entries_limit': FREE_LEDGER_ACTIONS_LIMIT if self.rotkehlchen.premium is None else -1,
+        }
+
+        return {'result': result, 'message': '', 'status_code': HTTPStatus.OK}
+
+    @require_loggedin_user()
+    def get_ledger_actions(
+            self,
+            from_ts: Timestamp,
+            to_ts: Timestamp,
+            location: Optional[Location],
+            async_query: bool,
+    ) -> Response:
+        if async_query:
+            return self._query_async(
+                command='_get_ledger_actions',
+                from_ts=from_ts,
+                to_ts=to_ts,
+                location=location,
+            )
+
+        response = self._get_ledger_actions(
+            from_ts=from_ts,
+            to_ts=to_ts,
+            location=location,
+        )
+        result_dict = {'result': response['result'], 'message': response['message']}
+        return api_response(process_result(result_dict), status_code=response['status_code'])
+
+    @require_loggedin_user()
+    def add_ledger_action(
+            self,
+            timestamp: Timestamp,
+            action_type: LedgerActionType,
+            location: Location,
+            amount: AssetAmount,
+            asset: Asset,
+            link: str,
+            notes: str,
+    ) -> Response:
+        db = DBLedgerActions(self.rotkehlchen.data.db, self.rotkehlchen.msg_aggregator)
+        identifier = db.add_ledger_action(
+            timestamp=timestamp,
+            action_type=action_type,
+            location=location,
+            amount=amount,
+            asset=asset,
+            link=link,
+            notes=notes,
+        )
+        result_dict = _wrap_in_ok_result({'identifier': identifier})
+        return api_response(result_dict, status_code=HTTPStatus.OK)
+
+    @require_loggedin_user()
+    def edit_ledger_action(self, action: LedgerAction) -> Response:
+        db = DBLedgerActions(self.rotkehlchen.data.db, self.rotkehlchen.msg_aggregator)
+        error_msg = db.edit_ledger_action(action)
+        if error_msg is not None:
+            return api_response(wrap_in_fail_result(error_msg), status_code=HTTPStatus.CONFLICT)
+
+        # Success - return all ledger actions after the edit
+        response = self._get_ledger_actions(
+            from_ts=None,
+            to_ts=None,
+            location=None,
+        )
+        result_dict = {'result': response['result'], 'message': response['message']}
+        return api_response(process_result(result_dict), status_code=HTTPStatus.OK)
+
+    @require_loggedin_user()
+    def delete_ledger_action(self, identifier: int) -> Response:
+        db = DBLedgerActions(self.rotkehlchen.data.db, self.rotkehlchen.msg_aggregator)
+        error_msg = db.remove_ledger_action(identifier=identifier)
+        if error_msg is not None:
+            return api_response(wrap_in_fail_result(error_msg), status_code=HTTPStatus.CONFLICT)
+
+        # Success - return all ledger actions after the removal
+        response = self._get_ledger_actions(
+            from_ts=None,
+            to_ts=None,
+            location=None,
+        )
+        result_dict = {'result': response['result'], 'message': response['message']}
+        return api_response(process_result(result_dict), status_code=HTTPStatus.OK)
 
     @require_loggedin_user()
     def get_tags(self) -> Response:
@@ -941,7 +1083,7 @@ class RestAPI():
         #    All results would be discarded anyway since we are logging out.
         # 2. Have an intricate stop() notification system for each greenlet, but
         #   that is going to get complicated fast.
-        gevent.killall(self.killable_greenlets)
+        gevent.killall(self.rotkehlchen.api_task_greenlets)
         with self.task_lock:
             self.task_results = {}
         self.rotkehlchen.logout()
@@ -1496,31 +1638,44 @@ class RestAPI():
         return api_response(result_dict, status_code=HTTPStatus.OK)
 
     @require_loggedin_user()
-    def get_ignored_action_ids(self) -> Response:
-        result = self.rotkehlchen.data.db.get_ignored_action_ids()
-        return api_response(_wrap_in_ok_result(result), status_code=HTTPStatus.OK)
-
-    @require_loggedin_user()
-    def add_ignored_action_ids(self, action_ids: List[str]) -> Response:
-        ignored_action_ids = self.rotkehlchen.data.db.get_ignored_action_ids()
-        if any(x in ignored_action_ids for x in action_ids):
-            msg = 'One of the given action ids already exists in the database'
-            return api_response(wrap_in_fail_result(msg), status_code=HTTPStatus.CONFLICT)
-        self.rotkehlchen.data.db.add_to_ignored_action_ids(identifiers=action_ids)
-        ignored_action_ids = self.rotkehlchen.data.db.get_ignored_action_ids()
-        result_dict = _wrap_in_ok_result(process_result_list(ignored_action_ids))
+    def get_ignored_action_ids(self, action_type: Optional[ActionType]) -> Response:
+        mapping = self.rotkehlchen.data.db.get_ignored_action_ids(action_type)
+        result_dict = _wrap_in_ok_result({str(k): v for k, v in mapping.items()})
         return api_response(result_dict, status_code=HTTPStatus.OK)
 
     @require_loggedin_user()
-    def remove_ignored_action_ids(self, action_ids: List[str]) -> Response:
-        ignored_action_ids = self.rotkehlchen.data.db.get_ignored_action_ids()
-        if not all(x in ignored_action_ids for x in action_ids):
-            msg = 'One of the given action ids does not exist in the database'
-            return api_response(wrap_in_fail_result(msg), status_code=HTTPStatus.CONFLICT)
+    def add_ignored_action_ids(self, action_type: ActionType, action_ids: List[str]) -> Response:
+        try:
+            self.rotkehlchen.data.db.add_to_ignored_action_ids(
+                action_type=action_type,
+                identifiers=action_ids,
+            )
+        except InputError as e:
+            return api_response(wrap_in_fail_result(str(e)), status_code=HTTPStatus.CONFLICT)
 
-        self.rotkehlchen.data.db.remove_from_ignored_action_ids(identifiers=action_ids)
-        ignored_action_ids = self.rotkehlchen.data.db.get_ignored_action_ids()
-        result_dict = _wrap_in_ok_result(process_result_list(ignored_action_ids))
+        mapping = self.rotkehlchen.data.db.get_ignored_action_ids(
+            action_type=action_type,
+        )
+        result_dict = _wrap_in_ok_result({str(k): v for k, v in mapping.items()})
+        return api_response(result_dict, status_code=HTTPStatus.OK)
+
+    @require_loggedin_user()
+    def remove_ignored_action_ids(
+            self,
+            action_type: ActionType,
+            action_ids: List[str],
+    ) -> Response:
+        try:
+            self.rotkehlchen.data.db.remove_from_ignored_action_ids(
+                action_type=action_type,
+                identifiers=action_ids,
+            )
+        except InputError as e:
+            return api_response(wrap_in_fail_result(str(e)), status_code=HTTPStatus.CONFLICT)
+        mapping = self.rotkehlchen.data.db.get_ignored_action_ids(
+            action_type=action_type,
+        )
+        result_dict = _wrap_in_ok_result({str(k): v for k, v in mapping.items()})
         return api_response(result_dict, status_code=HTTPStatus.OK)
 
     @require_loggedin_user()
@@ -2056,13 +2211,25 @@ class RestAPI():
             status_code = HTTPStatus.BAD_GATEWAY
             message = str(e)
 
+        if transactions is not None:
+            mapping = self.rotkehlchen.data.db.get_ignored_action_ids(ActionType.ETHEREUM_TX)
+            ignored_ids = mapping.get(ActionType.ETHEREUM_TX, [])
+            entries_result = []
+            for entry in transactions:
+                entries_result.append({
+                    'entry': entry.serialize(),
+                    'ignored_in_accounting': entry.identifier in ignored_ids,
+                })
+        else:
+            entries_result = []
+
         result = {
-            'entries': transactions,
+            'entries': entries_result,
             'entries_found': self.rotkehlchen.data.db.get_entries_count('ethereum_transactions'),
             'entries_limit': FREE_ETH_TX_LIMIT if self.rotkehlchen.premium is None else -1,
         }
 
-        return {'result': process_result(result), 'message': message, 'status_code': status_code}
+        return {'result': result, 'message': message, 'status_code': status_code}
 
     @require_loggedin_user()
     def get_ethereum_transactions(

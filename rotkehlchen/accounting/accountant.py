@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union, cast
 import gevent
 
 from rotkehlchen.accounting.events import TaxableEvents
-from rotkehlchen.accounting.structures import DefiEvent
+from rotkehlchen.accounting.structures import ActionType, DefiEvent, LedgerAction
 from rotkehlchen.assets.asset import Asset
 from rotkehlchen.assets.unknown_asset import UnknownEthereumToken
 from rotkehlchen.chain.ethereum.trades import AMMTrade
@@ -64,9 +64,7 @@ class Accountant():
 
         self.asset_movement_fees = FVal(0)
         self.last_gas_price = 0
-
-        self.started_processing_timestamp = Timestamp(-1)
-        self.currently_processing_timestamp = Timestamp(-1)
+        self.reset_processing_timestamps()
 
     def __del__(self) -> None:
         del self.events
@@ -99,6 +97,10 @@ class Accountant():
 
         if settings.account_for_assets_movements is not None:
             self.events.account_for_assets_movements = settings.account_for_assets_movements
+
+    def reset_processing_timestamps(self) -> None:
+        self.started_processing_timestamp = Timestamp(-1)
+        self.currently_processing_timestamp = Timestamp(-1)
 
     def get_fee_in_profit_currency(self, trade: Trade) -> Fee:
         """Get the profit_currency rate of the fee of the given trade
@@ -264,6 +266,7 @@ class Accountant():
             asset_movements: List[AssetMovement],
             eth_transactions: List[EthereumTransaction],
             defi_events: List[DefiEvent],
+            ledger_actions: List[LedgerAction],
     ) -> Dict[str, Any]:
         """Processes the entire history of cryptoworld actions in order to determine
         the price and time at which every asset was obtained and also
@@ -304,6 +307,9 @@ class Accountant():
         if len(defi_events) != 0:
             actions.extend(defi_events)
 
+        if len(ledger_actions) != 0:
+            actions.extend(ledger_actions)
+
         actions.sort(key=action_get_timestamp)
         # The first ts is the ts of the first action we have in history or 0 for empty history
         first_ts = Timestamp(0) if len(actions) == 0 else action_get_timestamp(actions[0])
@@ -312,7 +318,7 @@ class Accountant():
 
         prev_time = Timestamp(0)
         count = 0
-        ignored_action_ids = self.db.get_ignored_action_ids()
+        ignored_actionids_mapping = self.db.get_ignored_action_ids(action_type=None)
         for action in actions:
             try:
                 (
@@ -324,7 +330,7 @@ class Accountant():
                     end_ts=end_ts,
                     prev_time=prev_time,
                     db_settings=db_settings,
-                    ignored_action_ids=ignored_action_ids,
+                    ignored_actionids_mapping=ignored_actionids_mapping,
                 )
             except PriceQueryUnsupportedAsset as e:
                 ts = action_get_timestamp(action)
@@ -382,6 +388,7 @@ class Accountant():
         sum_other_actions = (
             self.events.margin_positions_profit_loss +
             self.events.defi_profit_loss +
+            self.events.ledger_actions_profit_loss +
             self.events.loan_profit -
             self.events.settlement_losses -
             self.asset_movement_fees -
@@ -390,6 +397,7 @@ class Accountant():
         total_taxable_pl = self.events.taxable_trade_profit_loss + sum_other_actions
         return {
             'overview': {
+                'ledger_actions_profit_loss': str(self.events.ledger_actions_profit_loss),
                 'defi_profit_loss': str(self.events.defi_profit_loss),
                 'loan_profit': str(self.events.loan_profit),
                 'margin_positions_profit_loss': str(self.events.margin_positions_profit_loss),
@@ -407,6 +415,45 @@ class Accountant():
             'all_events': self.csvexporter.all_events,
         }
 
+    @staticmethod
+    def _should_ignore_action(
+            action: TaxableAction,
+            action_type: str,
+            ignored_actionids_mapping: Dict[ActionType, List[str]],
+    ) -> Tuple[bool, Any]:
+        # TODO: These ifs/mappings of action type str to the enum
+        # are only due to mix of new and old code. They should be removed and only
+        # the enum should be used everywhere eventually
+        should_ignore = False
+        identifier: Optional[Any] = None
+        if action_type == 'trade':
+            trade = cast(Trade, action)
+            identifier = trade.identifier
+            should_ignore = identifier in ignored_actionids_mapping.get(ActionType.TRADE, [])
+
+        elif action_type == 'asset_movement':
+            movement = cast(AssetMovement, action)
+            identifier = movement.identifier
+            should_ignore = identifier in ignored_actionids_mapping.get(
+                ActionType.ASSET_MOVEMENT, [],
+            )
+
+        elif action_type == 'ethereum_transaction':
+            tx = cast(EthereumTransaction, action)
+            identifier = tx.identifier
+            should_ignore = tx.identifier in ignored_actionids_mapping.get(
+                ActionType.ETHEREUM_TX, [],
+            )
+
+        elif action_type == 'ledger_action':
+            ledger_action = cast(LedgerAction, action)
+            identifier = ledger_action.identifier
+            should_ignore = identifier in ignored_actionids_mapping.get(
+                ActionType.LEDGER_ACTION, [],
+            )
+
+        return should_ignore, identifier
+
     def _process_action(
             self,
             action: TaxableAction,
@@ -414,7 +461,7 @@ class Accountant():
             end_ts: Timestamp,
             prev_time: Timestamp,
             db_settings: DBSettings,
-            ignored_action_ids: List[str],
+            ignored_actionids_mapping: Dict[ActionType, List[str]],
     ) -> Tuple[bool, Timestamp]:
         """Processes each individual action and returns whether we should continue
         looping through the rest of the actions or not
@@ -422,7 +469,7 @@ class Accountant():
         May raise:
         - PriceQueryUnsupportedAsset if from/to asset is missing from price oracles
         - NoPriceForGivenTimestamp if we can't find a price for the asset in the given
-        timestamp from cryptocompare
+        timestamp from the price oracle
         - RemoteError if there is a problem reaching the price oracle server
         or with reading the response returned by the server
         """
@@ -444,7 +491,6 @@ class Accountant():
             return False, prev_time
 
         self.currently_processing_timestamp = timestamp
-
         action_type = action_get_type(action)
 
         try:
@@ -487,6 +533,18 @@ class Accountant():
             )
             return True, prev_time
 
+        should_ignore, identifier = self._should_ignore_action(
+            action=action,
+            action_type=action_type,
+            ignored_actionids_mapping=ignored_actionids_mapping,
+        )
+        if should_ignore:
+            log.info(
+                f'Ignoring {action_type} action with identifier {identifier} '
+                f'at {timestamp} since the user asked to ignore it',
+            )
+            return True, prev_time
+
         if action_type == 'loan':
             action = cast(Loan, action)
             self.events.add_loan_gain(
@@ -515,17 +573,13 @@ class Accountant():
             action = cast(DefiEvent, action)
             self.events.add_defi_event(action)
             return True, prev_time
+        if action_type == 'ledger_action':
+            action = cast(LedgerAction, action)
+            self.events.add_ledger_action(action)
+            return True, prev_time
 
         # else if we get here it's a trade
         trade = cast(Trade, action)
-        # This should eventually be the trade id as given by rotki and not "link"
-        # so that user can input it from the ui by selecting the trade in there
-        if trade.link in ignored_action_ids:
-            log.info(
-                f'Ignoring {trade.location} trade at {trade.timestamp} due to matching ignored id',
-            )
-            return True, prev_time
-
         # When you buy, you buy with the cost_currency and receive the other one
         # When you sell, you sell the amount in non-cost_currency and receive
         # costs in cost_currency

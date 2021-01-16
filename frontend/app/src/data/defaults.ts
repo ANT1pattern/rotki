@@ -7,9 +7,9 @@ export class Defaults {
   static DEFAULT_CURRENCY_LOCATION: CurrencyLocation = CURRENCY_AFTER;
   static FLOATING_PRECISION = 2;
   static RPC_ENDPOINT = 'http://localhost:8545';
+  static KSM_RPC_ENDPOINT = 'http://localhost:9933';
   static BALANCE_SAVE_FREQUENCY = 24;
   static ANONYMIZED_LOGS = false;
-  static HISTORICAL_DATA_START = '01/08/2015';
   static ANONYMOUS_USAGE_ANALYTICS = true;
   static KRAKEN_DEFAULT_ACCOUNT_TYPE = 'starter';
   static DEFAULT_QUERY_PERIOD = 5;
@@ -40,9 +40,12 @@ export const TRADE_LOCATION_REALESTATE = 'realestate';
 export const TRADE_LOCATION_COMMODITIES = 'commodities';
 export const TRADE_LOCATION_BLOCKCHAIN = 'blockchain';
 
-export const exchanges = [
-  EXCHANGE_POLONIEX,
+/**
+ * A list of exchanges that are supported via api connection
+ */
+export const SUPPORTED_EXCHANGES = [
   EXCHANGE_KRAKEN,
+  EXCHANGE_POLONIEX,
   EXCHANGE_BITTREX,
   EXCHANGE_BITMEX,
   EXCHANGE_BITFINEX,
@@ -53,6 +56,21 @@ export const exchanges = [
   EXCHANGE_COINBASEPRO,
   EXCHANGE_GEMINI,
   EXCHANGE_ICONOMI,
-  EXCHANGE_CRYPTOCOM,
   EXCHANGE_BITSTAMP
+] as const;
+
+export const SUPPORTED_TRADE_LOCATIONS = [
+  EXCHANGE_UNISWAP,
+  EXCHANGE_CRYPTOCOM,
+  TRADE_LOCATION_EXTERNAL,
+  TRADE_LOCATION_BANKS,
+  TRADE_LOCATION_EQUITIES,
+  TRADE_LOCATION_REALESTATE,
+  TRADE_LOCATION_COMMODITIES,
+  TRADE_LOCATION_BLOCKCHAIN
+] as const;
+
+export const ALL_TRADE_LOCATIONS = [
+  ...SUPPORTED_TRADE_LOCATIONS,
+  ...SUPPORTED_EXCHANGES
 ] as const;
